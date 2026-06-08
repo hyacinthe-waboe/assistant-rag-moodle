@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Generated RAG indexes and local course data
+backend/data/
+index_faiss.bin
+chunks.pkl
+*.bin
+*.pkl
+
+# Course material and institutional/personal documents
+Doc/
+*.pdf
+*.docx
+*.pptx
+
+# Generated plugin archives
+Plug in/*.zip
+
+# Local presentation artifacts
+mini_soutenance_preview.html
+generate_diaporama.py
+preview_diaporama.py
+texte_oral_mini_soutenance.md
+question.json
+
+# Project hand-off notes containing personal context
+CONTEXTE_REPRISE_CODEX.md
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+~$*

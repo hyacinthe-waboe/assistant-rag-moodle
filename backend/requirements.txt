@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+faiss-cpu
+langchain-text-splitters
+pymupdf
+numpy
+requests
+sentence-transformers
+rank-bm25
