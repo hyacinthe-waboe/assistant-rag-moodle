@@ -56,6 +56,8 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
     // ── État ──────────────────────────────────────────────────────────────
     var panel = null, overlay = null, isOpen = false, isFull = false;
     var welcomeHTML = '';
+    var indexPollTimer = null;
+    var indexStatusBubble = null;
 
     // Historique de conversation : max 6 messages (3 questions + 3 réponses)
     // Envoyé au backend à chaque nouvelle question pour donner la mémoire au modèle.
@@ -250,6 +252,71 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
         return m;
     }
 
+    function afficherStatutIndexation(texte) {
+        hideWelcome();
+        var zone = document.getElementById('brc-messages');
+        if (!indexStatusBubble || !document.body.contains(indexStatusBubble)) {
+            indexStatusBubble = bulleBot(texte, []);
+            indexStatusBubble.classList.add('brc_index_status');
+            zone.appendChild(indexStatusBubble);
+        } else {
+            indexStatusBubble.querySelector('.brc_bubble').textContent = texte;
+        }
+        scrollBas();
+    }
+
+    function arreterSuiviIndexation() {
+        if (indexPollTimer) {
+            window.clearTimeout(indexPollTimer);
+            indexPollTimer = null;
+        }
+    }
+
+    function suivreIndexation(courseid, afficherSiInactive) {
+        arreterSuiviIndexation();
+        Ajax.call([{
+            methodname: 'block_ragchat_index_status',
+            args: { courseid: courseid },
+        }])[0]
+        .then(function(r) {
+            var btn = document.getElementById('brc-reindex');
+            if (r.status === 'queued' || r.status === 'running') {
+                if (btn) btn.disabled = true;
+                afficherStatutIndexation(
+                    'Indexation en cours : ' + r.progress + ' %' +
+                    (r.message ? ' - ' + r.message : '')
+                );
+                indexPollTimer = window.setTimeout(function() {
+                    suivreIndexation(courseid, true);
+                }, 3000);
+                return;
+            }
+
+            if (btn) btn.disabled = false;
+            if (r.status === 'completed' && afficherSiInactive) {
+                afficherStatutIndexation(
+                    'Indexation terminée : ' + r.fichiers + ' PDF, ' +
+                    r.chunks + ' passages.'
+                );
+            } else if (r.status === 'failed' && afficherSiInactive) {
+                afficherStatutIndexation(
+                    'Échec de l’indexation' + (r.error ? ' : ' + r.error : '.')
+                );
+            } else if (afficherSiInactive) {
+                afficherStatutIndexation('Aucune indexation en cours.');
+            }
+        })
+        .catch(function() {
+            var btn = document.getElementById('brc-reindex');
+            if (btn) btn.disabled = false;
+            if (afficherSiInactive) {
+                afficherStatutIndexation(
+                    'Impossible de consulter la progression de l’indexation.'
+                );
+            }
+        });
+    }
+
     // ── Envoi ─────────────────────────────────────────────────────────────
     function envoyer(courseid) {
         var inp  = document.getElementById('brc-input');
@@ -304,32 +371,33 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
     function reindexer(courseid) {
         var btn = document.getElementById('brc-reindex');
         if (btn) btn.disabled = true;
-        hideWelcome();
-        var zone = document.getElementById('brc-messages');
-        zone.appendChild(bulleBot('Reindexation en cours...', [])); scrollBas();
+        afficherStatutIndexation('Envoi des PDF au service d’indexation...');
 
         Ajax.call([{
             methodname: 'block_ragchat_reindex',
             args: { courseid: courseid },
         }])[0]
         .then(function(r) {
-            zone.appendChild(bulleBot(
-                'Indexe : ' + r.fichiers + ' fichier' + (r.fichiers > 1 ? 's' : '') +
-                ', ' + r.chunks + ' chunks.', []));
-            scrollBas();
+            afficherStatutIndexation(
+                r.fichiers + ' PDF reçus. Préparation de l’indexation...'
+            );
+            suivreIndexation(courseid, true);
         })
         .catch(function() {
-            Str.get_string('error_backend', 'block_ragchat').done(function(msg) {
-                zone.appendChild(bulleBot(msg, [])); scrollBas();
-            });
-        })
-        .always(function() { if (btn) btn.disabled = false; });
+            afficherStatutIndexation(
+                'Le lancement a échoué. Vérifiez que le service IA est disponible.'
+            );
+            if (btn) btn.disabled = false;
+        });
     }
 
     // ── Init ─────────────────────────────────────────────────────────────
     return {
         init: function(courseid, canreindex, coursename) {
             buildPanel(courseid, canreindex, coursename || '');
+            if (canreindex) {
+                suivreIndexation(courseid, false);
+            }
 
             var openBtn = document.getElementById('brc-open');
             if (openBtn) {

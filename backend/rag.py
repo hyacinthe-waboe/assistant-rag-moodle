@@ -12,7 +12,9 @@ Chaîne : PDF -> texte -> chunks -> embeddings -> FAISS -> recherche -> réponse
 import os
 import pickle
 import re
+import tempfile
 from collections import defaultdict
+from collections.abc import Callable
 
 import faiss
 import numpy as np
@@ -162,23 +164,44 @@ def _decouper_source(source: str, texte: str, frontieres: list[tuple[int, int]],
 #  Construction / chargement de l'index
 # ---------------------------------------------------------------------------
 
-def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provider) -> dict:
+def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provider,
+                     progression: Callable[[str, int, str], None] | None = None) -> dict:
     """Construit et persiste l'index FAISS d'un cours.
 
     `fichiers_pdf` : liste de (chemin_sur_disque, nom_affiché).
     Renvoie un résumé chiffré (nb chunks, tokens) pour le suivi quantitatif.
     """
+    def signaler(etape: str, pourcentage: int, message: str) -> None:
+        if progression:
+            progression(etape, pourcentage, message)
+
     documents = []
-    for chemin, nom in fichiers_pdf:
+    total_fichiers = len(fichiers_pdf)
+    for numero, (chemin, nom) in enumerate(fichiers_pdf, start=1):
+        signaler(
+            "extraction",
+            5 + int(35 * numero / total_fichiers),
+            f"Extraction du PDF {numero}/{total_fichiers} : {nom}",
+        )
         documents.extend(extraire_texte_pdf(chemin, nom))
 
+    signaler("decoupage", 45, "Découpage du texte en passages.")
     chunks = decouper_en_chunks(documents)
     if not chunks:
         raise ValueError("Aucun texte exploitable (PDF vides ou scannés sans OCR ?).")
 
     # Vectorisation par lots, via le fournisseur choisi
     vecteurs, total_tokens = [], 0
-    for debut in range(0, len(chunks), config.TAILLE_LOT_EMBED):
+    total_lots = max(1, (len(chunks) + config.TAILLE_LOT_EMBED - 1) // config.TAILLE_LOT_EMBED)
+    for numero_lot, debut in enumerate(
+        range(0, len(chunks), config.TAILLE_LOT_EMBED),
+        start=1,
+    ):
+        signaler(
+            "vectorisation",
+            50 + int(45 * numero_lot / total_lots),
+            f"Vectorisation des passages : lot {numero_lot}/{total_lots}.",
+        )
         lot = [c["texte"] for c in chunks[debut:debut + config.TAILLE_LOT_EMBED]]
         vecs, tokens = provider.embed(lot)
         vecteurs.extend(vecs)
@@ -190,10 +213,24 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
     index = faiss.IndexFlatIP(matrice.shape[1])
     index.add(matrice)
 
+    signaler("sauvegarde", 97, "Enregistrement du nouvel index.")
     f_index, f_chunks = _chemins(course_id)
-    faiss.write_index(index, f_index)
-    with open(f_chunks, "wb") as f:
-        pickle.dump(chunks, f)
+    dossier = os.path.dirname(f_index)
+    fd_chunks, tmp_chunks = tempfile.mkstemp(dir=dossier, suffix=".pkl.tmp")
+    os.close(fd_chunks)
+    fd_index, tmp_index = tempfile.mkstemp(dir=dossier, suffix=".faiss.tmp")
+    os.close(fd_index)
+
+    try:
+        faiss.write_index(index, tmp_index)
+        with open(tmp_chunks, "wb") as f:
+            pickle.dump(chunks, f)
+        os.replace(tmp_index, f_index)
+        os.replace(tmp_chunks, f_chunks)
+    finally:
+        for chemin_temporaire in (tmp_index, tmp_chunks):
+            if os.path.exists(chemin_temporaire):
+                os.remove(chemin_temporaire)
 
     return {
         "course_id": course_id,

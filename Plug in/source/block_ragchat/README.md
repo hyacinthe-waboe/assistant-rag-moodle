@@ -26,7 +26,9 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
 1. Activer le mode édition dans un cours.
 2. Ajouter le bloc "Assistant IA du cours".
 3. Cliquer sur "Réindexer le cours" : le plugin récupère tous les PDF du cours
-   et les envoie au backend. Un message confirme (fichiers, chunks, tokens).
+   et les envoie au backend. La progression est affichée pendant leur
+   traitement en arrière-plan, puis un message indique le nombre de PDF reçus
+   et de passages générés.
 
 ### Étudiant
 - Taper une question dans le bloc et appuyer sur Entrée ou "Envoyer".

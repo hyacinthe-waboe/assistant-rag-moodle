@@ -11,13 +11,15 @@ avec recherche hybride.
 
 1. Un enseignant lance l'indexation depuis Moodle.
 2. Le plugin transmet les PDF du cours au backend.
-3. PyMuPDF extrait le texte et le découpe en passages.
-4. `sentence-transformers` produit localement les embeddings.
-5. FAISS effectue une recherche sémantique.
-6. BM25 recherche les mots précis.
-7. RRF fusionne les deux classements.
-8. Les meilleurs extraits et la question sont envoyés au modèle de génération.
-9. Moodle affiche la réponse, les sources et les extraits utilisés.
+3. Le backend répond immédiatement, puis construit l'index en arrière-plan.
+4. Moodle interroge la progression et affiche l'étape en cours jusqu'à la fin.
+5. PyMuPDF extrait le texte et le découpe en passages.
+6. `sentence-transformers` produit localement les embeddings.
+7. FAISS effectue une recherche sémantique.
+8. BM25 recherche les mots précis.
+9. RRF fusionne les deux classements.
+10. Les meilleurs extraits et la question sont envoyés au modèle de génération.
+11. Moodle affiche la réponse, les sources et les extraits utilisés.
 
 ## Structure
 
@@ -25,11 +27,14 @@ avec recherche hybride.
 backend/                         API FastAPI et moteur RAG
 Plug in/source/block_ragchat/    Code source du plugin Moodle
 ARCHITECTURE.md                  Description technique
+CONTEXTE_REPRISE_CODEX.md        Guide de reprise sur un autre poste
+rapport_stage.docx               Journal et rapport de stage
 rag_moodle.py                    Prototype historique en ligne de commande
 ```
 
-Les PDF de cours, les index FAISS, les clés API et les documents de stage ne
-sont pas versionnés.
+Le rapport principal est versionné afin de faciliter le travail sur plusieurs
+postes. Les PDF de cours, les index FAISS, les clés API et les autres documents
+de stage ne sont pas versionnés.
 
 ## Installation du backend
 
@@ -89,4 +94,3 @@ envoyés au modèle de génération.
 
 Ce dépôt ne contient aucune clé API ni ressource pédagogique utilisée pendant
 les tests.
-

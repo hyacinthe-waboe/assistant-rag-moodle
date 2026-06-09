@@ -22,14 +22,23 @@
 
 ```text
 PDF Moodle
+  -> dépôt temporaire sur le backend
+  -> réponse HTTP 202 à Moodle
+  -> traitement en arrière-plan
   -> extraction du texte page par page
   -> regroupement et découpage en chunks
   -> transformation des chunks en vecteurs
-  -> sauvegarde de l'index FAISS et des chunks
+  -> sauvegarde atomique de l'index FAISS et des chunks
 ```
 
 L'indexation est lancée manuellement par l'enseignant. Chaque cours possède son
-propre dossier dans `backend/data/<course_id>/`.
+propre dossier dans `backend/data/<course_id>/`. Le plugin interroge
+`GET /index/<course_id>/status` toutes les trois secondes et affiche l'étape
+ainsi que le pourcentage de progression.
+
+L'état des travaux est conservé en mémoire par le backend. Il est donc perdu
+si le processus FastAPI redémarre, mais l'index déjà enregistré reste
+disponible.
 
 ## Réponse à une question
 

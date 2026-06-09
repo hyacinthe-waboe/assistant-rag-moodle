@@ -22,4 +22,13 @@ $functions = [
         'ajax'        => true,
         'capabilities'=> 'block/ragchat:reindex',
     ],
+
+    // Consulter la progression de l'indexation en arrière-plan.
+    'block_ragchat_index_status' => [
+        'classname'   => 'block_ragchat\\external\\index_status',
+        'description' => 'Renvoie la progression de l\'indexation RAG du cours.',
+        'type'        => 'read',
+        'ajax'        => true,
+        'capabilities'=> 'block/ragchat:reindex',
+    ],
 ];

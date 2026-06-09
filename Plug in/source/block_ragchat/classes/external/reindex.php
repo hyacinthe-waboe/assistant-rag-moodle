@@ -80,33 +80,34 @@ class reindex extends external_api {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $postdata);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+        // Le backend répond dès que les fichiers sont reçus, puis indexe en arrière-plan.
+        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
         $raw  = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
         curl_close($ch);
 
-        if ($err || $code !== 200) {
+        if ($err || !in_array($code, [200, 202], true)) {
             throw new \moodle_exception('error_backend', 'block_ragchat');
         }
 
         $data = json_decode($raw, true);
-        if (!is_array($data) || !isset($data['chunks'])) {
+        if (!is_array($data) || !isset($data['status'])) {
             throw new \moodle_exception('error_backend', 'block_ragchat');
         }
 
         return [
             'fichiers' => (int) ($data['fichiers'] ?? $index),
-            'chunks'   => (int) $data['chunks'],
-            'tokens'   => (int) ($data['tokens_embedding'] ?? 0),
+            'status'   => (string) $data['status'],
+            'message'  => (string) ($data['message'] ?? ''),
         ];
     }
 
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'fichiers' => new external_value(PARAM_INT, 'Nombre de PDF indexés'),
-            'chunks'   => new external_value(PARAM_INT, 'Nombre de chunks générés'),
-            'tokens'   => new external_value(PARAM_INT, 'Tokens d\'embedding consommés'),
+            'status'   => new external_value(PARAM_ALPHA, 'État initial du travail'),
+            'message'  => new external_value(PARAM_TEXT, 'Message initial'),
         ]);
     }
 }
