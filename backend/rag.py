@@ -13,6 +13,7 @@ import os
 import pickle
 import re
 import tempfile
+import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
 
@@ -35,6 +36,60 @@ import config
 RRF_K = 60
 MAX_MESSAGES_HISTORIQUE = 6
 TAILLE_APERCU_PASSAGE = 400
+
+
+# ---------------------------------------------------------------------------
+#  Messages courants traités localement
+# ---------------------------------------------------------------------------
+
+def _normaliser_message(texte: str) -> str:
+    """Normalise une phrase courte pour comparer des formulations simples."""
+    texte = unicodedata.normalize("NFKD", texte.lower())
+    texte = "".join(caractere for caractere in texte
+                    if not unicodedata.combining(caractere))
+    return " ".join(re.findall(r"[a-z0-9]+", texte))
+
+
+def repondre_message_courant(question: str) -> dict | None:
+    """Répond localement aux messages simples, sans recherche ni appel au LLM."""
+    message = _normaliser_message(question)
+
+    if message in {
+        "bonjour",
+        "salut",
+        "coucou",
+        "hello",
+        "bonjour ca va",
+        "bonjour comment ca va",
+        "bonjour comment vas tu",
+        "salut ca va",
+    }:
+        reponse = "Bonjour ! Je suis l'Assistant IA de ce cours. Comment puis-je vous aider ?"
+    elif message == "bonsoir":
+        reponse = "Bonsoir ! Je suis l'Assistant IA de ce cours. Comment puis-je vous aider ?"
+    elif message in {"merci", "merci beaucoup"}:
+        reponse = "Avec plaisir."
+    elif message in {"au revoir", "a bientot"}:
+        reponse = "Au revoir et à bientôt."
+    elif message in {
+        "qui es tu",
+        "tu es qui",
+        "quel est ton role",
+        "que peux tu faire",
+    }:
+        reponse = (
+            "Je suis l'Assistant IA du cours. "
+            "Je réponds aux questions à partir des ressources indexées."
+        )
+    else:
+        return None
+
+    return {
+        "reponse": reponse,
+        "sources": [],
+        "passages": [],
+        "tokens": 0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +231,7 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
             progression(etape, pourcentage, message)
 
     documents = []
+    fichiers_exploitables = 0
     total_fichiers = len(fichiers_pdf)
     for numero, (chemin, nom) in enumerate(fichiers_pdf, start=1):
         signaler(
@@ -183,7 +239,10 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
             5 + int(35 * numero / total_fichiers),
             f"Extraction du PDF {numero}/{total_fichiers} : {nom}",
         )
-        documents.extend(extraire_texte_pdf(chemin, nom))
+        segments = extraire_texte_pdf(chemin, nom)
+        if segments:
+            fichiers_exploitables += 1
+            documents.extend(segments)
 
     signaler("decoupage", 45, "Découpage du texte en passages.")
     chunks = decouper_en_chunks(documents)
@@ -235,6 +294,7 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
     return {
         "course_id": course_id,
         "fichiers": len(fichiers_pdf),
+        "fichiers_exploitables": fichiers_exploitables,
         "chunks": len(chunks),
         "tokens_embedding": total_tokens,
     }
@@ -331,6 +391,33 @@ def _formater_historique(history: list[dict] | None) -> str:
     return "\nHISTORIQUE DE LA CONVERSATION :\n" + "\n".join(lignes) + "\n"
 
 
+def _question_pour_recherche(question: str, history: list[dict] | None) -> str:
+    """Complète un suivi vague avec la dernière question de l'étudiant."""
+    suivis_vagues = {
+        "peux tu preciser",
+        "peux tu developper",
+        "peux tu expliquer davantage",
+        "tu peux preciser",
+        "tu peux developper",
+        "et pourquoi",
+        "pourquoi",
+        "comment",
+    }
+    if _normaliser_message(question) not in suivis_vagues or not history:
+        return question
+
+    for message in reversed(history):
+        contenu = message.get("content", "").strip()
+        if (
+            message.get("role") == "user"
+            and contenu
+            and not repondre_message_courant(contenu)
+        ):
+            return f"{contenu} {question}"
+
+    return question
+
+
 def _exporter_passages(passages: list[dict]) -> list[dict]:
     """Prépare des extraits courts pour l'accordéon du plugin Moodle."""
     resultat = []
@@ -354,8 +441,13 @@ def repondre(course_id: str, question: str, k: int, provider,
     par le plugin Moodle. Injectée comme contexte textuel pour donner au
     modèle la mémoire des échanges précédents (max 3 derniers échanges).
     """
+    reponse_locale = repondre_message_courant(question)
+    if reponse_locale:
+        return reponse_locale
+
     index, chunks = charger_index(course_id)
-    passages = rechercher(index, chunks, provider, question, k)
+    question_recherche = _question_pour_recherche(question, history)
+    passages = rechercher(index, chunks, provider, question_recherche, k)
 
     if not passages:
         return {"reponse": "Aucun passage pertinent trouvé dans les ressources du cours.",

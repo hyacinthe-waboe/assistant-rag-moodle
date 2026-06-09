@@ -53,8 +53,9 @@ Question de l'étudiant
 ```
 
 L'historique contient au maximum trois échanges. Il aide le modèle à comprendre
-les questions de suivi, mais la recherche des extraits utilise la question
-courante.
+les questions de suivi. Pour quelques formulations vagues reconnues, la
+recherche réutilise aussi la dernière question de l'étudiant, sans appel
+supplémentaire au modèle.
 
 ## Rôle des fichiers Python
 

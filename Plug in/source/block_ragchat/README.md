@@ -19,7 +19,7 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
    de la base. Valider.
 3. Régler l'URL du backend :
    Administration du site > Plugins > Blocs > Assistant IA du cours
-   -> champ "URL du backend RAG" (défaut : http://localhost:8000)
+   -> champ "URL du backend RAG" (défaut : http://127.0.0.1:8000)
 
 ## Utilisation
 ### Enseignant
@@ -27,19 +27,22 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
 2. Ajouter le bloc "Assistant IA du cours".
 3. Cliquer sur "Réindexer le cours" : le plugin récupère tous les PDF du cours
    et les envoie au backend. La progression est affichée pendant leur
-   traitement en arrière-plan, puis un message indique le nombre de PDF reçus
-   et de passages générés.
+   traitement en arrière-plan, puis un message distingue les PDF reçus, les
+   PDF contenant du texte exploitable et le nombre de passages générés.
 
 ### Étudiant
 - Taper une question dans le bloc et appuyer sur Entrée ou "Envoyer".
 - La réponse s'affiche, ancrée dans le cours, avec les sources citées.
+- Les salutations simples sont traitées localement, sans recherche ni appel au
+  modèle de génération.
 
 ## Points clés (rapport)
 - L'URL du backend reste côté serveur : le navigateur ne l'atteint jamais.
 - Toute requête passe par les services web Moodle (authentification + droits respectés).
 - La récupération des PDF utilise la File API interne (pas d'accès brut au disque ni à la BDD).
 - Bascule souveraine : côté backend, `RAG_PROVIDER=ollama` suffit pour passer en local.
-- RGPD : la transmission de la question au backend est déclarée (privacy provider).
+- RGPD : le privacy provider déclare les PDF indexés, l'identifiant du cours,
+  la question et l'historique court transmis au backend.
 
 ## Limites connues (prototype)
 - Seuls les PDF sont indexés (pas encore Pages/Livres Moodle, ni OCR des scans).

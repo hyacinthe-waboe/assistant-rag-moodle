@@ -16,10 +16,11 @@ import shutil
 import tempfile
 import threading
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 import config
@@ -100,15 +101,23 @@ def _executer_indexation(course_id: str, dossier: str,
 # ── Schémas ───────────────────────────────────────────────────────────────────
 
 class MessageHistorique(BaseModel):
-    role:    str   # "user" ou "assistant"
-    content: str
+    role:    Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8000)
 
 
 class AskRequest(BaseModel):
-    course_id: str
-    question:  str
-    k:         int            = config.TOP_K
-    history:   list[MessageHistorique] = Field(default_factory=list)
+    course_id: str = Field(pattern=r"^\d+$", max_length=20)
+    question:  str = Field(min_length=1, max_length=2000)
+    k:         int = Field(default=config.TOP_K, ge=1, le=20)
+    history:   list[MessageHistorique] = Field(default_factory=list, max_length=6)
+
+    @field_validator("question")
+    @classmethod
+    def nettoyer_question(cls, question: str) -> str:
+        question = question.strip()
+        if not question:
+            raise ValueError("La question ne peut pas être vide.")
+        return question
 
 
 class PassageItem(BaseModel):
@@ -218,6 +227,10 @@ def index_status(course_id: str):
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
     """Répond à une question en s'ancrant sur les ressources indexées."""
+    reponse_locale = rag.repondre_message_courant(req.question)
+    if reponse_locale:
+        return reponse_locale
+
     try:
         index_present = rag.index_existe(req.course_id)
     except ValueError as erreur:

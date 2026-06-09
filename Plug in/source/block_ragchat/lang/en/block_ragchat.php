@@ -12,7 +12,7 @@ $string['ragchat:reindex'] = 'Reindex course resources';
 
 // Settings.
 $string['backendurl'] = 'RAG backend URL';
-$string['backendurl_desc'] = 'Address of the RAG service (FastAPI). Example: http://localhost:8000. '
+$string['backendurl_desc'] = 'Address of the RAG service (FastAPI). Example: http://127.0.0.1:8000. '
     . 'This URL stays server-side and is never sent to the browser.';
 
 // Interface.
@@ -24,10 +24,18 @@ $string['coursecontextonly'] = 'This assistant is only available inside a course
 // Errors.
 $string['error_noconfig'] = 'The RAG backend is not configured. Please contact the administrator.';
 $string['error_backend'] = 'The AI service is temporarily unavailable.';
+$string['error_invalidquestion'] = 'The question is empty, too long, or invalid.';
+$string['error_noindex'] = 'The resources for this course have not been indexed yet.';
 $string['error_nopdf'] = 'No PDF file found to index in this course.';
 
 // Privacy (GDPR).
-$string['privacy:metadata:ragbackend'] = 'In order to answer, the question is sent to a RAG service '
-    . 'that processes it against the course resources.';
+$string['privacy:metadata:ragbackend'] = 'The RAG backend indexes course PDFs and processes questions. '
+    . 'Depending on the configured provider, the question, short history, and selected excerpts '
+    . 'may be sent to the generation service. Full PDFs and the index are not sent to ILAAS.';
+$string['privacy:metadata:ragbackend:courseid'] = 'The identifier of the course.';
+$string['privacy:metadata:ragbackend:documents'] = 'Course PDFs sent to the backend for extraction '
+    . 'and indexing.';
 $string['privacy:metadata:ragbackend:question'] = 'The question entered by the user, '
     . 'sent to the service to generate an answer.';
+$string['privacy:metadata:ragbackend:history'] = 'The last three conversation exchanges, used to '
+    . 'understand follow-up questions.';

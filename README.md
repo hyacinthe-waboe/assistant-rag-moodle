@@ -21,6 +21,11 @@ avec recherche hybride.
 10. Les meilleurs extraits et la question sont envoyés au modèle de génération.
 11. Moodle affiche la réponse, les sources et les extraits utilisés.
 
+Les salutations et messages courants reconnus sont traités directement par le
+backend, sans recherche documentaire et sans appel au modèle. À la fin d'une
+indexation, l'interface distingue les PDF reçus des PDF contenant réellement
+du texte exploitable.
+
 ## Structure
 
 ```text
@@ -81,16 +86,18 @@ Le fournisseur est sélectionné avec la variable `RAG_PROVIDER`.
 - Les numéros de pages sont approximatifs lorsqu'un passage couvre plusieurs
   pages.
 - Une réindexation reconstruit actuellement tout l'index du cours.
-- Une question de suivi vague peut échouer après une digression, car
-  l'historique n'est pas encore utilisé pour reformuler la requête de recherche.
+- Quelques questions de suivi vagues, comme « Peux-tu préciser ? », sont
+  complétées localement avec la dernière question de l'étudiant avant la
+  recherche. Les suivis plus ambigus après une longue digression restent une
+  limite du prototype.
 - Le backend doit rester sur un réseau protégé tant qu'une authentification
   dédiée n'a pas été ajoutée.
 
 ## Confidentialité
 
 Les documents complets, l'extraction, les embeddings et la recherche restent
-sur le backend. Avec ILAAS, seuls la question et les extraits sélectionnés sont
-envoyés au modèle de génération.
+sur le backend. Avec ILAAS, seuls la question, l'historique court et les
+extraits sélectionnés sont envoyés au modèle de génération.
 
 Ce dépôt ne contient aucune clé API ni ressource pédagogique utilisée pendant
 les tests.

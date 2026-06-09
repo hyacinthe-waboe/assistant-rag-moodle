@@ -1,9 +1,7 @@
 <?php
 // Fournisseur de confidentialité (RGPD).
-// Ce plugin ne STOCKE aucune donnée personnelle dans Moodle, mais il
-// TRANSMET la question de l'étudiant à un backend externe. On le déclare
-// explicitement : c'est une exigence RGPD et un point central du pilote
-// "IA souveraine" (en déploiement Ollama local, le backend est interne UT2J).
+// Le plugin ne stocke pas les conversations dans Moodle. Il transmet au
+// backend les ressources à indexer, la question et l'historique court.
 
 namespace block_ragchat\privacy;
 
@@ -16,7 +14,12 @@ class provider implements \core_privacy\local\metadata\provider {
     public static function get_metadata(collection $collection): collection {
         $collection->add_external_location_link(
             'ragbackend',
-            ['question' => 'privacy:metadata:ragbackend:question'],
+            [
+                'courseid' => 'privacy:metadata:ragbackend:courseid',
+                'documents' => 'privacy:metadata:ragbackend:documents',
+                'question' => 'privacy:metadata:ragbackend:question',
+                'history' => 'privacy:metadata:ragbackend:history',
+            ],
             'privacy:metadata:ragbackend'
         );
         return $collection;

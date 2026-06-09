@@ -10,7 +10,7 @@ if ($ADMIN->fulltree) {
         'block_ragchat/backendurl',
         get_string('backendurl', 'block_ragchat'),
         get_string('backendurl_desc', 'block_ragchat'),
-        'http://localhost:8000',
+        'http://127.0.0.1:8000',
         PARAM_URL
     ));
 }

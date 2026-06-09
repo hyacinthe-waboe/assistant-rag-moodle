@@ -54,6 +54,7 @@ class index_status extends external_api {
             'message' => (string) ($data['message'] ?? ''),
             'error' => (string) ($data['error'] ?? ''),
             'fichiers' => (int) ($result['fichiers'] ?? $data['files'] ?? 0),
+            'fichiersexploitables' => (int) ($result['fichiers_exploitables'] ?? 0),
             'chunks' => (int) ($result['chunks'] ?? 0),
             'tokens' => (int) ($result['tokens_embedding'] ?? 0),
         ];
@@ -67,6 +68,10 @@ class index_status extends external_api {
             'message' => new external_value(PARAM_TEXT, 'Détail de la progression'),
             'error' => new external_value(PARAM_TEXT, 'Erreur éventuelle'),
             'fichiers' => new external_value(PARAM_INT, 'Nombre de PDF'),
+            'fichiersexploitables' => new external_value(
+                PARAM_INT,
+                'Nombre de PDF contenant du texte exploitable'
+            ),
             'chunks' => new external_value(PARAM_INT, 'Nombre de passages'),
             'tokens' => new external_value(PARAM_INT, 'Tokens d\'embedding'),
         ]);

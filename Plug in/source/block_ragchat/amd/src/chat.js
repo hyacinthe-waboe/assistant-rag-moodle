@@ -104,6 +104,7 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
                 SVG_RELOAD + ' Reindexer le cours</button></div>' : '') +
             '  <div class="brc_input_wrap">' +
             '    <textarea id="brc-input" class="brc_textarea" rows="1"' +
+            '      maxlength="2000"' +
             '      placeholder="Posez une question sur le cours..."></textarea>' +
             '    <button id="brc-send" class="brc_send_btn" aria-label="Envoyer">' + SVG_SEND + '</button>' +
             '  </div>' +
@@ -221,7 +222,7 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
         var acc = '';
         if (passages.length > 0) {
             var label = passages.length + ' extrait' + (passages.length > 1 ? 's' : '') +
-                        ' utilise' + (passages.length > 1 ? 's' : '');
+                        ' selectionne' + (passages.length > 1 ? 's' : '');
             var chunksHtml = passages.map(function(p) {
                 var nom = (p.source || '').replace(/^.*[/\\]/, '');
                 return '<div class="brc_chunk">' +
@@ -295,7 +296,8 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
             if (btn) btn.disabled = false;
             if (r.status === 'completed' && afficherSiInactive) {
                 afficherStatutIndexation(
-                    'Indexation terminée : ' + r.fichiers + ' PDF, ' +
+                    'Indexation terminée : ' + r.fichiers + ' PDF reçus, ' +
+                    r.fichiersexploitables + ' exploitables, ' +
                     r.chunks + ' passages.'
                 );
             } else if (r.status === 'failed' && afficherSiInactive) {

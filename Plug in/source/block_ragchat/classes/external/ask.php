@@ -59,6 +59,16 @@ class ask extends external_api {
         $err  = curl_error($ch);
         curl_close($ch);
 
+        if ($code === 404) {
+            return ['reponse' => get_string('error_noindex', 'block_ragchat'),
+                    'sources' => [], 'passages' => [], 'tokens' => 0];
+        }
+
+        if ($code === 422) {
+            return ['reponse' => get_string('error_invalidquestion', 'block_ragchat'),
+                    'sources' => [], 'passages' => [], 'tokens' => 0];
+        }
+
         if ($err || $code !== 200) {
             return ['reponse' => get_string('error_backend', 'block_ragchat'),
                     'sources' => [], 'passages' => [], 'tokens' => 0];
