@@ -24,6 +24,10 @@ Doc/
 *.pptx
 !rapport_stage.docx
 
+# Local presentation material
+capture_chatbot_soutenance.png
+notes_orales_soutenance*.md
+
 # Generated plugin archives
 Plug in/*.zip
 
