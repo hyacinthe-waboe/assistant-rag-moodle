@@ -35,7 +35,11 @@ class ILAASProvider:
         vecteurs = self._model.encode(textes, convert_to_numpy=True).tolist()
         return vecteurs, 0  # 0 token : calcul local, pas de quota
 
-    def chat(self, system: str, user: str, temperature: float = 0.2) -> tuple[str, int]:
+    def cache_key(self) -> str:
+        """Identifiant stable du couple provider/modèle d'embeddings."""
+        return f"ilaas:{config.ILAAS_EMBED_MODEL}"
+
+    def chat(self, system: str, user: str, temperature: float = 0.1) -> tuple[str, int]:
         """Génération via endpoint ILAAS (compatible OpenAI)."""
         r = requests.post(
             f"{self._base}/chat/completions",
@@ -82,7 +86,11 @@ class OllamaProvider:
             vecteurs.append(r.json()["embedding"])
         return vecteurs, 0
 
-    def chat(self, system: str, user: str, temperature: float = 0.2) -> tuple[str, int]:
+    def cache_key(self) -> str:
+        """Identifiant stable du couple provider/modèle d'embeddings."""
+        return f"ollama:{config.OLLAMA_EMBED}"
+
+    def chat(self, system: str, user: str, temperature: float = 0.1) -> tuple[str, int]:
         r = requests.post(
             f"{self._base}/api/chat",
             json={

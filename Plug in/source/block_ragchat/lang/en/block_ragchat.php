@@ -14,6 +14,9 @@ $string['ragchat:reindex'] = 'Reindex course resources';
 $string['backendurl'] = 'RAG backend URL';
 $string['backendurl_desc'] = 'Address of the RAG service (FastAPI). Example: http://127.0.0.1:8000. '
     . 'This URL stays server-side and is never sent to the browser.';
+$string['backendtoken'] = 'Backend authentication token';
+$string['backendtoken_desc'] = 'Shared secret between Moodle and the backend. Leave empty if the backend '
+    . 'does not require authentication yet.';
 
 // Interface.
 $string['askplaceholder'] = 'Ask a question about the course…';

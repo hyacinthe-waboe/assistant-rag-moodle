@@ -13,4 +13,11 @@ if ($ADMIN->fulltree) {
         'http://127.0.0.1:8000',
         PARAM_URL
     ));
+
+    $settings->add(new admin_setting_configpasswordunmask(
+        'block_ragchat/backendtoken',
+        get_string('backendtoken', 'block_ragchat'),
+        get_string('backendtoken_desc', 'block_ragchat'),
+        ''
+    ));
 }

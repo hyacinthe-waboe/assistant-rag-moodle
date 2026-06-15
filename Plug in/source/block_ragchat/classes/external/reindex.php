@@ -7,6 +7,8 @@ namespace block_ragchat\external;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../lib.php');
+
 use core_external\external_api;
 use core_external\external_function_parameters;
 use core_external\external_single_structure;
@@ -80,6 +82,7 @@ class reindex extends external_api {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $postdata);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, block_ragchat_backend_headers(false));
         // Le backend répond dès que les fichiers sont reçus, puis indexe en arrière-plan.
         curl_setopt($ch, CURLOPT_TIMEOUT, 300);
         $raw  = curl_exec($ch);
