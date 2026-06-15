@@ -22,7 +22,6 @@ Doc/
 *.pdf
 *.docx
 *.pptx
-!rapport_stage.docx
 
 # Local presentation material
 capture_chatbot_soutenance.png

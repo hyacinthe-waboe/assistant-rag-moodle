@@ -44,13 +44,11 @@ backend/prompt_benchmark.py      Benchmark réel du prompt et de la recherche
 Plug in/source/block_ragchat/    Code source du plugin Moodle
 ARCHITECTURE.md                  Description technique
 CONTEXTE_REPRISE_CODEX.md        Guide de reprise sur un autre poste
-rapport_stage.docx               Journal et rapport de stage
 rag_moodle.py                    Prototype historique en ligne de commande
 ```
 
-Le rapport principal est versionné afin de faciliter le travail sur plusieurs
-postes. Les PDF de cours, les index FAISS, les clés API et les autres documents
-de stage ne sont pas versionnés.
+Les rapports, les PDF de cours, les index FAISS, les clés API et les documents
+de travail ne sont pas versionnés.
 
 ## Installation du backend
 
