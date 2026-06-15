@@ -1,7 +1,7 @@
 # Assistant RAG pour Moodle
 
-Prototype réalisé dans le cadre d'un stage de Licence 3 MIASHS Informatique à
-l'Université Toulouse Jean Jaurès.
+Prototype académique réalisé pour étudier l'intégration d'un assistant RAG
+dans Moodle.
 
 Le projet ajoute à Moodle un assistant capable de répondre à partir des PDF
 d'un cours. Il combine un plugin Moodle, un backend FastAPI et un pipeline RAG
@@ -41,10 +41,8 @@ OCR lorsque Tesseract et les langues `fra` et `eng` sont installés.
 ```text
 backend/                         API FastAPI et moteur RAG
 backend/prompt_benchmark.py      Benchmark réel du prompt et de la recherche
-Plug in/source/block_ragchat/    Code source du plugin Moodle
+moodle/block_ragchat/            Code source du plugin Moodle
 ARCHITECTURE.md                  Description technique
-CONTEXTE_REPRISE_CODEX.md        Guide de reprise sur un autre poste
-rag_moodle.py                    Prototype historique en ligne de commande
 ```
 
 Les rapports, les PDF de cours, les index FAISS, les clés API et les documents
@@ -75,7 +73,7 @@ Le service peut être vérifié avec `GET http://127.0.0.1:8000/health`.
 
 ## Installation du plugin Moodle
 
-1. Copier `Plug in/source/block_ragchat` dans `MOODLE_ROOT/blocks/`.
+1. Copier `moodle/block_ragchat` dans `MOODLE_ROOT/blocks/`.
 2. Terminer l'installation depuis l'administration Moodle.
 3. Configurer l'URL du backend dans les paramètres du bloc.
 4. Configurer le même jeton partagé que `RAG_SHARED_TOKEN` dans le champ

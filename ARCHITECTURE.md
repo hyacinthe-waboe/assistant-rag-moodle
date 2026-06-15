@@ -75,7 +75,6 @@ supplémentaire au modèle.
 - `rag.py` : extraction, indexation, recherche et génération.
 - `main.py` : endpoints HTTP utilisés par le plugin Moodle.
 - `prompt_benchmark.py` : scénarios réels de non-régression du prompt.
-- `rag_moodle.py` : prototype historique en ligne de commande.
 
 ## Limites actuelles
 

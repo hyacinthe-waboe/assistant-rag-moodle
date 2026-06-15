@@ -1,6 +1,6 @@
 <?php
 // Métadonnées du plugin block_ragchat.
-// Stage Pilote IA Moodle 5.1 — MIN / UT2J.
+// Prototype d'assistant RAG pour Moodle.
 
 defined('MOODLE_INTERNAL') || die();
 

@@ -1,7 +1,6 @@
-# Plugin block_ragchat — Installation et test
+# Plugin block_ragchat
 
 Assistant IA de cours (RAG souverain) pour Moodle 5.1.
-Stage Pilote IA Moodle 5.1 — MIN / UT2J.
 
 ## Prérequis
 Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
@@ -9,7 +8,7 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
     cd backend
     pip install -r requirements.txt
     $env:RAG_PROVIDER="ilaas"
-    $env:ILAAS_API_KEY="votre_cle_Moodle"
+    $env:ILAAS_API_KEY="votre_cle"
     $env:RAG_SHARED_TOKEN="secret_partage"
     uvicorn main:app --host 127.0.0.1 --port 8000
 
@@ -38,7 +37,7 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
 - Les salutations simples sont traitées localement, sans recherche ni appel au
   modèle de génération.
 
-## Points clés (rapport)
+## Points clés
 - L'URL du backend reste côté serveur : le navigateur ne l'atteint jamais.
 - Toute requête passe par les services web Moodle (authentification + droits respectés).
 - Les appels au backend sont protégés par un jeton partagé côté serveur.

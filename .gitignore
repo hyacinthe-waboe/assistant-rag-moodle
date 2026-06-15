@@ -28,7 +28,7 @@ capture_chatbot_soutenance.png
 notes_orales_soutenance*.md
 
 # Generated plugin archives
-Plug in/*.zip
+moodle/*.zip
 
 # Local presentation artifacts
 mini_soutenance_preview.html
@@ -36,9 +36,6 @@ generate_diaporama.py
 preview_diaporama.py
 texte_oral_mini_soutenance.md
 question.json
-
-# Project hand-off notes
-!CONTEXTE_REPRISE_CODEX.md
 
 # Editors and operating systems
 .idea/

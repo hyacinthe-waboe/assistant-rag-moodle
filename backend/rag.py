@@ -2,9 +2,8 @@
 """
 Cœur RAG — logique métier indépendante de l'API web et du fournisseur d'IA.
 
-Reprend exactement la chaîne validée dans le prototype (rag_moodle.py), mais :
-  - organisée par COURS (un index FAISS distinct par identifiant de cours) ;
-  - branchée sur l'abstraction `providers` (ILAAS ou Ollama).
+Le moteur organise un index FAISS distinct par cours et utilise l'abstraction
+`providers` pour fonctionner avec ILAAS ou Ollama.
 
 Chaîne : PDF -> texte -> chunks -> embeddings -> FAISS -> recherche -> réponse.
 """
