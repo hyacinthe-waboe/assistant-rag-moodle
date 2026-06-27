@@ -257,8 +257,52 @@
     border-radius: 16px;
     font-size: 14px;
     line-height: 1.65;
-    white-space: pre-wrap;
+    white-space: normal;
     word-break: break-word;
+}
+
+
+.brc_md {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.brc_md p {
+    margin: 0;
+}
+
+.brc_md_title {
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.brc_md_h1 { font-size: 16px; }
+.brc_md_h2 { font-size: 15px; }
+.brc_md_h3 { font-size: 14px; }
+
+.brc_md ul, .brc_md ol {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.brc_md li {
+    margin: 0;
+}
+
+.brc_md li + li {
+    margin-top: 6px;
+}
+
+.brc_md strong {
+    font-weight: 700;
+}
+
+.brc_md code {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: rgba(26, 43, 74, 0.08);
+    font-size: 0.95em;
 }
 
 .brc_index_bubble {

@@ -44,14 +44,104 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
         '<path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>';
 
     // ── Nettoyeur markdown ────────────────────────────────────────────────
-    function nettoyerMarkdown(texte) {
-        return texte
-            .replace(/\*\*(.*?)\*\*/g, '$1')
-            .replace(/\*(.*?)\*/g, '$1')
-            .replace(/^#{1,6}\s+/gm, '')
-            .replace(/^[-•]\s+/gm, '- ')
-            .replace(/`([^`]+)`/g, '$1');
+    function preparerMarkdownInline(texte) {
+        var rendu = escHtml((texte || '').trim());
+        rendu = rendu.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        rendu = rendu.replace(/`([^`]+)`/g, '<code>$1</code>');
+        return rendu;
     }
+
+    function rendreMarkdownLeger(texte) {
+        texte = (texte || '').replace(/\r\n/g, '\n').trim();
+        if (!texte) {
+            return '';
+        }
+
+        var lignes = texte.split('\n');
+        var blocs = [];
+        var paragraphe = [];
+        var items = [];
+        var typeListe = null;
+        var debutListe = null;
+        var compteurListeOrdonnee = 0;
+
+        function viderParagraphe() {
+            if (!paragraphe.length) {
+                return;
+            }
+            blocs.push('<p>' + preparerMarkdownInline(paragraphe.join(' ').replace(/\s+/g, ' ')) + '</p>');
+            paragraphe = [];
+        }
+
+        function viderListe() {
+            if (!items.length) {
+                typeListe = null;
+                debutListe = null;
+                return;
+            }
+            var attribut = typeListe === 'ol' && debutListe ? ' start="' + debutListe + '"' : '';
+            blocs.push('<' + typeListe + attribut + '>' + items.join('') + '</' + typeListe + '>');
+            items = [];
+            typeListe = null;
+            debutListe = null;
+        }
+
+        function viderTout() {
+            viderParagraphe();
+            viderListe();
+        }
+
+        for (var i = 0; i < lignes.length; i++) {
+            var brute = lignes[i].trim();
+            if (!brute) {
+                viderTout();
+                continue;
+            }
+
+            var titre = brute.match(/^(#{1,3})\s+(.+)$/);
+            if (titre) {
+                viderTout();
+                compteurListeOrdonnee = 0;
+                var niveau = Math.min(3, titre[1].length);
+                blocs.push('<div class="brc_md_title brc_md_h' + niveau + '">' + preparerMarkdownInline(titre[2]) + '</div>');
+                continue;
+            }
+
+            var puce = brute.match(/^[-*?]\s+(.+)$/);
+            if (puce) {
+                viderParagraphe();
+                if (typeListe !== 'ul') {
+                    viderListe();
+                    typeListe = 'ul';
+                }
+                items.push('<li>' + preparerMarkdownInline(puce[1]) + '</li>');
+                continue;
+            }
+
+            var numerotee = brute.match(/^(\d+)\s*[.)]\s+(.+)$/);
+            if (numerotee) {
+                viderParagraphe();
+                var numero = parseInt(numerotee[1], 10) || 1;
+                if (typeListe !== 'ol') {
+                    viderListe();
+                    typeListe = 'ol';
+                    debutListe = numero > 1 ? numero : compteurListeOrdonnee + 1;
+                }
+                items.push('<li>' + preparerMarkdownInline(numerotee[2]) + '</li>');
+                compteurListeOrdonnee++;
+                continue;
+            }
+
+            if (typeListe) {
+                viderListe();
+            }
+            paragraphe.push(brute);
+        }
+
+        viderTout();
+        return blocs.join('');
+    }
+
 
     // ── État ──────────────────────────────────────────────────────────────
     var panel = null, overlay = null, isOpen = false, isFull = false;
@@ -213,11 +303,11 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
         m.className = 'brc_msg brc_msg_bot';
 
         // Nettoyage markdown avant affichage
-        var texteNet = nettoyerMarkdown(texte);
+        var texteHTML = rendreMarkdownLeger(texte);
 
         var row = '<div class="brc_msg_row">' +
             '<div class="brc_av">' + SVG_BOT + '</div>' +
-            '<div class="brc_bubble">' + escHtml(texteNet) + '</div></div>';
+            '<div class="brc_bubble brc_md">' + texteHTML + '</div></div>';
 
         var acc = '';
         if (passages.length > 0) {

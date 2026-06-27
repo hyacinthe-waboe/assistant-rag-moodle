@@ -34,6 +34,13 @@ class PromptGeneralisteTests(unittest.TestCase):
             prompt,
         )
 
+    def test_prompt_encadre_la_lisibilite_des_listes(self):
+        prompt = config.SYSTEM_PROMPT
+
+        self.assertIn("rubriques courtes", prompt)
+        self.assertIn("sous-listes imbriquées", prompt)
+        self.assertIn("synthèse utile à un étudiant", prompt)
+
 
 class ReponseLocaleTests(unittest.TestCase):
 
@@ -45,17 +52,15 @@ class ReponseLocaleTests(unittest.TestCase):
         self.assertEqual(resultat["sources"], [])
         self.assertEqual(resultat["passages"], [])
 
-    def test_identite_reconnait_les_accents_et_la_ponctuation(self):
+    def test_identite_n_est_pas_interceptee_localement(self):
         resultat = rag.repondre_message_courant("Qui es-tu ?")
 
-        self.assertIn("Assistant IA", resultat["reponse"])
+        self.assertIsNone(resultat)
 
-    def test_salutation_et_identite_restent_locales(self):
+    def test_salutation_et_question_ne_sont_pas_interceptees(self):
         resultat = rag.repondre_message_courant("Bonjour, qui es-tu ?")
 
-        self.assertIsNotNone(resultat)
-        self.assertEqual(resultat["tokens"], 0)
-        self.assertEqual(resultat["sources"], [])
+        self.assertIsNone(resultat)
 
     def test_salutation_avec_politesse_reste_locale(self):
         resultat = rag.repondre_message_courant("Bonjour, ça va ?")
@@ -245,6 +250,25 @@ class UtilitairesRagTests(unittest.TestCase):
         self.assertIn("Fonction documentée [Extrait 1]", resultat)
         self.assertNotIn("plus ancien", resultat)
         self.assertFalse(resultat.endswith("Comparaison :"))
+
+    def test_reformatage_rend_les_listes_plus_lisibles(self):
+        reponse = (
+            "1. Notions importantes\n"
+            "- Première idée [Extrait 1]\n"
+            "- Deuxième idée [Extrait 2]\n\n"
+            "2. Autre axe\n"
+            "- Point A [Extrait 3]"
+        )
+
+        resultat = rag._reformater_reponse_etudiante(
+            reponse,
+            "Cite moi les notions importantes",
+        )
+
+        self.assertIn("Notions importantes", resultat)
+        self.assertIn("Première idée [Extrait 1]", resultat)
+        self.assertIn("Deuxième idée [Extrait 2]", resultat)
+        self.assertIn("\n\n2. Autre axe", resultat)
 
     def test_nombre_absent_de_la_source_supprime_la_ligne(self):
         passages = [
@@ -468,6 +492,90 @@ class IndexationTests(unittest.TestCase):
 
 
 class ReponseRagTests(unittest.TestCase):
+
+    def test_suivi_validation_reverifie_avec_les_sources(self):
+        historique = [
+            {"role": "user", "content": "Cite moi les notions importantes du cours."},
+            {"role": "assistant", "content": "1. Stratigraphie\n2. Cour à péristyle"},
+        ]
+
+        class ProviderLocal:
+            def __init__(self):
+                self.message = ""
+
+            def chat(self, system, message):
+                self.message = message
+                return "Oui, mais seulement pour les notions citees dans les extraits [Extrait 1].", 5
+
+        passage = {
+            "source": "cours.pdf",
+            "page": 1,
+            "texte": "Le cours presente la stratigraphie et la cour a peristyle.",
+        }
+        provider = ProviderLocal()
+
+        with (
+            mock.patch.object(rag, "charger_index", return_value=("index", [passage])),
+            mock.patch.object(rag, "rechercher", return_value=[passage]) as rechercher,
+        ):
+            resultat = rag.repondre(
+                "3",
+                "Donc c'est ça les notions importantes du cours ?",
+                10,
+                provider,
+                historique,
+            )
+
+        rechercher.assert_called_once_with(
+            "index",
+            [passage],
+            provider,
+            "Cite moi les notions importantes du cours. Donc c'est ça les notions importantes du cours ?",
+            10,
+        )
+        self.assertIn("MODE SUIVI / VERIFICATION", provider.message)
+        self.assertIn("Ne confirme jamais automatiquement", provider.message)
+        self.assertEqual(resultat["sources"], ["cours.pdf (p.1)"])
+        self.assertEqual(resultat["tokens"], 5)
+
+    def test_suivi_de_correction_reformule_avec_les_sources(self):
+        historique = [
+            {"role": "user", "content": "Résume le chapitre."},
+            {"role": "assistant", "content": "Voici une liste très mécanique."},
+        ]
+
+        class ProviderLocal:
+            def __init__(self):
+                self.message = ""
+
+            def chat(self, system, message):
+                self.message = message
+                return "Le chapitre presente une idee principale reformulee simplement [Extrait 1].", 5
+
+        passage = {
+            "source": "chapitre.pdf",
+            "page": 2,
+            "texte": "Le chapitre presente une idee principale.",
+        }
+        provider = ProviderLocal()
+
+        with (
+            mock.patch.object(rag, "charger_index", return_value=("index", [passage])),
+            mock.patch.object(rag, "rechercher", return_value=[passage]),
+        ):
+            resultat = rag.repondre(
+                "3",
+                "Oui mais c'est bizarre, tu peux corriger ?",
+                10,
+                provider,
+                historique,
+            )
+
+        self.assertIn("MODE SUIVI / VERIFICATION", provider.message)
+        self.assertIn("reformule seulement", provider.message)
+        self.assertEqual(resultat["tokens"], 5)
+        self.assertEqual(resultat["sources"], ["chapitre.pdf (p.2)"])
+        self.assertIn("reformulee simplement", resultat["reponse"])
 
     def test_repondre_utilise_la_question_completee_pour_la_recherche(self):
         historique = [

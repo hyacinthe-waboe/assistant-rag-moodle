@@ -57,14 +57,8 @@ def _normaliser_message(texte: str) -> str:
 
 
 def repondre_message_courant(question: str) -> dict | None:
-    """Répond localement aux messages simples, sans recherche ni appel au LLM."""
+    """Répond localement uniquement aux politesses évidentes."""
     message = _normaliser_message(question)
-    identite = {
-        "qui es tu",
-        "tu es qui",
-        "quel est ton role",
-        "que peux tu faire",
-    }
 
     if message in {
         "bonjour",
@@ -83,15 +77,6 @@ def repondre_message_courant(question: str) -> dict | None:
         reponse = "Avec plaisir."
     elif message in {"au revoir", "a bientot"}:
         reponse = "Au revoir et à bientôt."
-    elif message in identite or any(
-        message == f"{salutation} {formulation}"
-        for salutation in ("bonjour", "salut", "hello", "bonsoir")
-        for formulation in identite
-    ):
-        reponse = (
-            "Je suis l'Assistant IA du cours. "
-            "Je réponds aux questions à partir des ressources indexées."
-        )
     else:
         return None
 
@@ -747,7 +732,21 @@ def _question_pour_recherche(question: str, history: list[dict] | None) -> str:
         "pourquoi",
         "comment",
     }
-    if _normaliser_message(question) not in suivis_vagues or not history:
+    if not history:
+        return question
+
+    if _est_question_suivi_reponse(question, history):
+        for message in reversed(history):
+            contenu = message.get("content", "").strip()
+            if (
+                message.get("role") == "user"
+                and contenu
+                and not repondre_message_courant(contenu)
+            ):
+                return f"{contenu} {question}"
+        return question
+
+    if _normaliser_message(question) not in suivis_vagues:
         return question
 
     for message in reversed(history):
@@ -762,10 +761,62 @@ def _question_pour_recherche(question: str, history: list[dict] | None) -> str:
     return question
 
 
-def _instructions_question(question: str) -> str:
+def _est_question_suivi_reponse(question: str, history: list[dict] | None) -> bool:
+    """Détecte les réactions courtes à une réponse précédente."""
+    if not history:
+        return False
+
+    normalisee = _normaliser_message(question)
+    mots = normalisee.split()
+    if len(mots) > 18:
+        return False
+
+    marqueurs = (
+        "c est ca",
+        "c est cela",
+        "c est bien ca",
+        "ca veut dire",
+        "cela veut dire",
+        "donc",
+        "du coup",
+        "en gros",
+        "globalement",
+        "tu confirmes",
+        "tu es sur",
+        "est ce que c est",
+        "je vois",
+        "j ai compris",
+        "bizarre",
+        "pas normal",
+        "pas coherent",
+        "pas clair",
+        "corrige",
+        "reformule",
+        "plus simple",
+        "plus clairement",
+        "robotique",
+    )
+    return any(marqueur in normalisee for marqueur in marqueurs)
+
+
+def _instructions_question(question: str, history: list[dict] | None = None) -> str:
     """Ajoute des garde-fous adaptés à la forme de la question."""
     normalisee = _normaliser_message(question)
     instructions = []
+
+    if _est_question_suivi_reponse(question, history):
+        instructions.append(
+            "MODE SUIVI / VERIFICATION : l'utilisateur reagit a la reponse "
+            "precedente. Ne confirme jamais automatiquement. Relis l'historique "
+            "et confronte la reponse precedente aux extraits du CONTEXTE. "
+            "Si la reponse precedente est correcte, confirme brievement en "
+            "citant les extraits qui le prouvent. Si elle est fausse, incomplete "
+            "ou trop forte, corrige-la clairement. Si les extraits ne permettent "
+            "pas de trancher, dis que tu ne peux pas confirmer avec les ressources "
+            "du cours. Pour une demande de reformulation, reformule seulement "
+            "l'idee concernee a partir des extraits, sans repartir dans un "
+            "inventaire complet du cours."
+        )
 
     if _est_question_preuves(question):
         instructions.append(
@@ -837,13 +888,16 @@ def _verifier_reponse(provider, contexte: str, question: str,
         "5. conserve uniquement des références [Extrait N] existantes. "
         "6. tout nombre ou toute date doit apparaître explicitement dans l'extrait "
         "cité ; sinon, supprime cette précision. "
-        "Respecte strictement la portée de la question. Pour une comparaison, garde "
-        "uniquement les axes demandés et 250 mots maximum. Pour une demande de "
-        "preuves, recherche les preuves les plus explicites dans TOUS les extraits "
-        "et donne au maximum cinq preuves directes. Si un élément est décrit comme "
-        "seulement compatible, associé, indirect ou sans lien direct établi, SUPPRIME "
-        "entièrement cet élément de la réponse. Si une information n'est pas démontrée "
-        "par le contexte, retire-la au lieu de la reformuler."
+        "Respecte strictement la portée de la question. Pour une comparaison, "
+        "garde uniquement les axes demandés et 250 mots maximum. Pour une "
+        "demande de preuves, recherche les preuves les plus explicites dans "
+        "TOUS les extraits et donne au maximum cinq preuves directes. Si un "
+        "élément est décrit comme seulement compatible, associé, indirect ou "
+        "sans lien direct établi, SUPPRIME entièrement cet élément de la "
+        "réponse. Si une information n'est pas démontrée par le contexte, "
+        "retire-la au lieu de la reformuler. Quand la réponse contient plusieurs "
+        "idées, garde une structure lisible avec des paragraphes courts, ou des "
+        "sections simples si cela aide la compréhension."
     )
     return provider.chat(config.SYSTEM_PROMPT, message)
 
@@ -1005,6 +1059,16 @@ def _retirer_nombres_non_sources(reponse: str, passages: list[dict]) -> str:
     return "\n".join(lignes).strip()
 
 
+def _reformater_reponse_etudiante(reponse: str, question: str) -> str:
+    """Nettoie l?g?rement la r?ponse sans imposer de structure."""
+    texte = (reponse or "").replace("\r\n", "\n").strip()
+    if not texte:
+        return ""
+    texte = re.sub(r"[ \t]+\n", "\n", texte)
+    texte = re.sub(r"\n{3,}", "\n\n", texte)
+    texte = re.sub(r"\s+([,.;:!?])", r"\1", texte)
+    return texte.strip()
+
 def repondre(course_id: str, question: str, k: int, provider,
              history: list[dict] | None = None) -> dict:
     """Pipeline complet : recherche -> prompt ancré -> génération.
@@ -1030,12 +1094,18 @@ def repondre(course_id: str, question: str, k: int, provider,
     message = (
         f"CONTEXTE (extraits du cours) :\n{contexte}"
         f"{_formater_historique(history)}\n"
-        f"{_instructions_question(question)}"
+        f"{_instructions_question(question, history)}"
         f"QUESTION : {question}\n\n"
         "Réponds en français uniquement à partir du CONTEXTE ci-dessus. "
         "Ajoute [Extrait N] après chaque affirmation factuelle. "
         "Réponds directement, sans introduction générique, sans conclusion ajoutée, "
         "sans tableau et sans section qui n'est pas demandée. "
+        "Si la question demande de citer, lister ou résumer des notions, donne une "
+        "synthèse lisible en quelques rubriques, sans sous-listes imbriquées et sans "
+        "inventaire technique inutile. Regroupe les détails proches, limite-toi aux "
+        "notions centrales et n'ajoute pas d'exemples précis si la question ne les "
+        "demande pas. Pour les rubriques principales, évite les listes numérotées : "
+        "utilise plutôt des titres courts ou des puces simples. "
         "Vérifie silencieusement chaque affirmation avant de rédiger la réponse finale. "
         "Si aucune réponse fiable ne peut être établie, dis que l'information "
         "n'est pas présente dans les ressources du cours."
@@ -1053,6 +1123,7 @@ def repondre(course_id: str, question: str, k: int, provider,
 
     reponse = _nettoyer_reponse(reponse, question)
     reponse = _retirer_nombres_non_sources(reponse, passages)
+    reponse = _reformater_reponse_etudiante(reponse, question)
     passages_utilises = _passages_cites(reponse, passages)
     sources = sorted({
         f"{p['source']} (p.{p['page']})"
