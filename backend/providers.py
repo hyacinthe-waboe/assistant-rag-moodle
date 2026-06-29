@@ -10,6 +10,10 @@ Deux providers disponibles, même interface embed() / chat() :
 import requests
 import config
 
+TIMEOUT_ILAAS_CHAT = 120
+TIMEOUT_OLLAMA_EMBED = 120
+TIMEOUT_OLLAMA_CHAT = 300
+
 
 class ILAASProvider:
     """Provider principal — embeddings locaux + génération ILAAS.
@@ -28,7 +32,7 @@ class ILAASProvider:
             )
         from sentence_transformers import SentenceTransformer
         self._model = SentenceTransformer(config.ILAAS_EMBED_MODEL)
-        self._base  = config.ILAAS_BASE_URL.rstrip("/")
+        self._base = config.ILAAS_BASE_URL.rstrip("/")
 
     def embed(self, textes: list[str]) -> tuple[list[list[float]], int]:
         """Vectorisation locale — aucune donnée ne sort."""
@@ -51,15 +55,15 @@ class ILAASProvider:
                 "model": config.ILAAS_CHAT,
                 "messages": [
                     {"role": "system", "content": system},
-                    {"role": "user",   "content": user},
+                    {"role": "user", "content": user},
                 ],
                 "temperature": temperature,
             },
-            timeout=120,
+            timeout=TIMEOUT_ILAAS_CHAT,
         )
         r.raise_for_status()
-        data   = r.json()
-        texte  = data["choices"][0]["message"]["content"]
+        data = r.json()
+        texte = data["choices"][0]["message"]["content"]
         tokens = data.get("usage", {}).get("total_tokens", 0)
         return texte, tokens
 
@@ -80,7 +84,7 @@ class OllamaProvider:
             r = requests.post(
                 f"{self._base}/api/embeddings",
                 json={"model": config.OLLAMA_EMBED, "prompt": texte},
-                timeout=120,
+                timeout=TIMEOUT_OLLAMA_EMBED,
             )
             r.raise_for_status()
             vecteurs.append(r.json()["embedding"])
@@ -97,12 +101,12 @@ class OllamaProvider:
                 "model": config.OLLAMA_CHAT,
                 "messages": [
                     {"role": "system", "content": system},
-                    {"role": "user",   "content": user},
+                    {"role": "user", "content": user},
                 ],
                 "stream": False,
                 "options": {"temperature": temperature},
             },
-            timeout=300,
+            timeout=TIMEOUT_OLLAMA_CHAT,
         )
         r.raise_for_status()
         return r.json()["message"]["content"], 0

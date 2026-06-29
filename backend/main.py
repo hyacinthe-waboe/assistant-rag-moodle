@@ -41,9 +41,18 @@ provider = obtenir_provider()
 index_jobs = {}
 index_jobs_lock = threading.Lock()
 
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
+STATUTS_ACTIFS = {"queued", "running"}
+STATUTS_TERMINES = {"completed", "failed"}
+
 
 def _maintenant() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _query_bool(request: Request, nom: str) -> bool:
+    """Lit un booléen simple dans les paramètres d'URL."""
+    return request.query_params.get(nom, "").lower() in TRUTHY_VALUES
 
 
 def _etat_path(course_id: str) -> str:
@@ -100,7 +109,7 @@ def _etat_public(job: dict, include_finished: bool = False) -> dict:
         public["result"] = result
         return public
 
-    if public["status"] in {"completed", "failed"}:
+    if public["status"] in STATUTS_TERMINES:
         public["last_status"] = public["status"]
         public["last_stage"] = public["stage"]
         public["last_progress"] = public["progress"]
@@ -117,6 +126,29 @@ def _etat_public(job: dict, include_finished: bool = False) -> dict:
         public["updated_at"] = ""
         public["result"] = {}
     return public
+
+
+def _etat_idle(course_id: str) -> dict:
+    """État renvoyé quand aucun job d'indexation n'est en mémoire."""
+    return {
+        "course_id": course_id,
+        "status": "idle",
+        "stage": "idle",
+        "progress": 100 if rag.index_existe(course_id) else 0,
+        "message": "Aucune indexation en cours.",
+        "result": {},
+        "error": "",
+        "started_at": "",
+        "updated_at": "",
+        "last_status": "",
+        "last_stage": "",
+        "last_progress": 0,
+        "last_message": "",
+        "last_error": "",
+        "last_started_at": "",
+        "last_updated_at": "",
+        "last_result": {},
+    }
 
 
 def _verifier_auth(request: Request) -> None:
@@ -144,6 +176,13 @@ def _modifier_job(course_id: str, **valeurs) -> None:
         job = index_jobs.setdefault(course_id, {})
         job.update(valeurs)
         job["updated_at"] = _maintenant()
+
+
+def _sauver_job_termine(course_id: str) -> None:
+    """Persiste le dernier état utile d'un job terminé."""
+    with index_jobs_lock:
+        job = dict(index_jobs.get(course_id, {}))
+    _sauver_etat_course(course_id, _etat_public(job, include_finished=True))
 
 
 def _executer_indexation(course_id: str, dossier: str,
@@ -180,7 +219,7 @@ def _executer_indexation(course_id: str, dossier: str,
             result=resume,
             error="",
         )
-        _sauver_etat_course(course_id, _etat_public(dict(index_jobs.get(course_id, {})), include_finished=True))
+        _sauver_job_termine(course_id)
     except Exception as erreur:
         _modifier_job(
             course_id,
@@ -189,7 +228,7 @@ def _executer_indexation(course_id: str, dossier: str,
             message="L'indexation a échoué.",
             error=str(erreur),
         )
-        _sauver_etat_course(course_id, _etat_public(dict(index_jobs.get(course_id, {})), include_finished=True))
+        _sauver_job_termine(course_id)
     finally:
         shutil.rmtree(dossier, ignore_errors=True)
 
@@ -197,15 +236,15 @@ def _executer_indexation(course_id: str, dossier: str,
 # ── Schémas ───────────────────────────────────────────────────────────────────
 
 class MessageHistorique(BaseModel):
-    role:    Literal["user", "assistant"]
+    role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=8000)
 
 
 class AskRequest(BaseModel):
     course_id: str = Field(pattern=r"^\d+$", max_length=20)
-    question:  str = Field(min_length=1, max_length=2000)
-    k:         int = Field(default=config.TOP_K, ge=1, le=20)
-    history:   list[MessageHistorique] = Field(default_factory=list, max_length=6)
+    question: str = Field(min_length=1, max_length=2000)
+    k: int = Field(default=config.TOP_K, ge=1, le=20)
+    history: list[MessageHistorique] = Field(default_factory=list, max_length=6)
 
     @field_validator("question")
     @classmethod
@@ -218,15 +257,15 @@ class AskRequest(BaseModel):
 
 class PassageItem(BaseModel):
     source: str
-    page:   int | str
-    texte:  str
+    page: int | str
+    texte: str
 
 
 class AskResponse(BaseModel):
-    reponse:  str
-    sources:  list[str]
+    reponse: str
+    sources: list[str]
     passages: list[PassageItem] = Field(default_factory=list)
-    tokens:   int
+    tokens: int
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -248,7 +287,7 @@ async def index_course(course_id: str, request: Request, background_tasks: Backg
 
     with index_jobs_lock:
         job = index_jobs.get(course_id)
-        if job and job.get("status") in {"queued", "running"}:
+        if job and job.get("status") in STATUTS_ACTIFS:
             raise HTTPException(
                 status_code=409,
                 detail="Une indexation est déjà en cours pour ce cours.",
@@ -302,12 +341,7 @@ async def index_course(course_id: str, request: Request, background_tasks: Backg
 def index_status(course_id: str, request: Request):
     """Renvoie l'état de la dernière indexation demandée pour un cours."""
     _verifier_auth(request)
-    include_finished = request.query_params.get("include_finished", "").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    include_finished = _query_bool(request, "include_finished")
     try:
         course_id = rag._valider_course_id(course_id)
     except ValueError as erreur:
@@ -320,27 +354,9 @@ def index_status(course_id: str, request: Request):
         etat_persiste = _charger_etat_course(course_id)
         if etat_persiste:
             return {"course_id": course_id, **_etat_public(etat_persiste, include_finished=include_finished)}
-        return {
-            "course_id": course_id,
-            "status": "idle",
-            "stage": "idle",
-            "progress": 100 if rag.index_existe(course_id) else 0,
-            "message": "Aucune indexation en cours.",
-            "result": {},
-            "error": "",
-            "started_at": "",
-            "updated_at": "",
-            "last_status": "",
-            "last_stage": "",
-            "last_progress": 0,
-            "last_message": "",
-            "last_error": "",
-            "last_started_at": "",
-            "last_updated_at": "",
-            "last_result": {},
-        }
+        return _etat_idle(course_id)
 
-    if not include_finished and job.get("status") in {"completed", "failed"}:
+    if not include_finished and job.get("status") in STATUTS_TERMINES:
         return {"course_id": course_id, **_etat_public(job, include_finished=False)}
 
     return {"course_id": course_id, **job}

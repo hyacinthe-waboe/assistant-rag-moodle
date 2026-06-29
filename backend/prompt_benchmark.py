@@ -17,6 +17,7 @@ import fitz
 
 BASE_URL = os.getenv("RAG_BENCHMARK_URL", "http://127.0.0.1:8000")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+ATTENTE_INDEXATION_SECONDES = 180
 
 
 def _requete_json(path: str, payload: dict | None = None) -> dict:
@@ -73,7 +74,7 @@ def _indexer(course_id: str, chemin_pdf: str) -> None:
     with urllib.request.urlopen(requete, timeout=60):
         pass
 
-    for _ in range(180):
+    for _ in range(ATTENTE_INDEXATION_SECONDES):
         etat = _requete_json(f"/index/{course_id}/status?include_finished=1")
         if etat.get("status") == "completed":
             return
@@ -109,6 +110,12 @@ def _evaluer(texte: str, requis: list[str], interdits: list[str],
         if not any(terme.casefold() in normalise for terme in groupe):
             erreurs.append(f"aucun parmi: {', '.join(groupe)}")
     return not erreurs, erreurs
+
+
+def _supprimer_cours_crees(cours_ids: list[str]) -> None:
+    """Supprime les données temporaires créées par le benchmark."""
+    for course_id in cours_ids:
+        shutil.rmtree(os.path.join(DATA_DIR, course_id), ignore_errors=True)
 
 
 def main() -> int:
@@ -262,8 +269,7 @@ def main() -> int:
             indent=2,
         )
 
-    for course_id in cours_crees:
-        shutil.rmtree(os.path.join(DATA_DIR, course_id), ignore_errors=True)
+    _supprimer_cours_crees(cours_crees)
 
     print(f"Score : {reussis}/{len(rapport)}")
     for resultat in rapport:

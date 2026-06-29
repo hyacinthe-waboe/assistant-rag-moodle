@@ -28,6 +28,7 @@ except ImportError:
     import fitz
 
 import config
+import rag_rules as rules
 
 RRF_K = 60
 MAX_MESSAGES_HISTORIQUE = 6
@@ -59,25 +60,8 @@ def _normaliser_message(texte: str) -> str:
 def repondre_message_courant(question: str) -> dict | None:
     """Répond localement uniquement aux politesses évidentes."""
     message = _normaliser_message(question)
-
-    if message in {
-        "bonjour",
-        "salut",
-        "coucou",
-        "hello",
-        "bonjour ca va",
-        "bonjour comment ca va",
-        "bonjour comment vas tu",
-        "salut ca va",
-    }:
-        reponse = "Bonjour ! Je suis l'Assistant IA de ce cours. Comment puis-je vous aider ?"
-    elif message == "bonsoir":
-        reponse = "Bonsoir ! Je suis l'Assistant IA de ce cours. Comment puis-je vous aider ?"
-    elif message in {"merci", "merci beaucoup"}:
-        reponse = "Avec plaisir."
-    elif message in {"au revoir", "a bientot"}:
-        reponse = "Au revoir et à bientôt."
-    else:
+    reponse = rules.REPONSES_LOCALES.get(message)
+    if reponse is None:
         return None
 
     return {
@@ -136,6 +120,34 @@ def _cache_signature(provider) -> str:
     return provider.__class__.__name__
 
 
+def _ecrire_json_atomique(chemin: str, donnees: dict) -> None:
+    """Écrit un JSON sans risque de fichier partiellement écrit."""
+    dossier = os.path.dirname(chemin)
+    fd, tmp = tempfile.mkstemp(dir=dossier, suffix=".json.tmp")
+    os.close(fd)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(donnees, f, ensure_ascii=False, indent=2, sort_keys=True)
+        os.replace(tmp, chemin)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _ecrire_pickle_atomique(chemin: str, donnees) -> None:
+    """Écrit un fichier pickle avec remplacement atomique."""
+    dossier = os.path.dirname(chemin)
+    fd, tmp = tempfile.mkstemp(dir=dossier, suffix=".pkl.tmp")
+    os.close(fd)
+    try:
+        with open(tmp, "wb") as f:
+            pickle.dump(donnees, f)
+        os.replace(tmp, chemin)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def _charger_manifest(course_id: str) -> dict:
     chemin = _manifest_path(course_id)
     if not os.path.exists(chemin):
@@ -153,17 +165,7 @@ def _charger_manifest(course_id: str) -> dict:
 
 
 def _sauver_manifest(course_id: str, manifest: dict) -> None:
-    chemin = _manifest_path(course_id)
-    dossier = os.path.dirname(chemin)
-    fd, tmp = tempfile.mkstemp(dir=dossier, suffix=".manifest.tmp")
-    os.close(fd)
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
-        os.replace(tmp, chemin)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    _ecrire_json_atomique(_manifest_path(course_id), manifest)
 
 
 def _charger_cache_fichier(course_id: str, empreinte: str) -> dict | None:
@@ -175,22 +177,30 @@ def _charger_cache_fichier(course_id: str, empreinte: str) -> dict | None:
 
 
 def _sauver_cache_fichier(course_id: str, empreinte: str, donnees: dict) -> None:
-    chemin = _cache_path(course_id, empreinte)
-    dossier = os.path.dirname(chemin)
-    fd, tmp = tempfile.mkstemp(dir=dossier, suffix=".cache.tmp")
-    os.close(fd)
-    try:
-        with open(tmp, "wb") as f:
-            pickle.dump(donnees, f)
-        os.replace(tmp, chemin)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    _ecrire_pickle_atomique(_cache_path(course_id, empreinte), donnees)
 
 
 def index_existe(course_id: str) -> bool:
     f_index, f_chunks = _chemins(course_id)
     return os.path.exists(f_index) and os.path.exists(f_chunks)
+
+
+def _config_cache(provider) -> dict:
+    """Paramètres qui rendent un cache d'indexation encore réutilisable."""
+    return {
+        "cache_version": CACHE_VERSION,
+        "provider": _cache_signature(provider),
+        "taille_chunk": config.TAILLE_CHUNK,
+        "recouvrement": config.RECOUVREMENT,
+        "ocr_enabled": config.OCR_ENABLED,
+        "ocr_language": config.OCR_LANGUAGE,
+        "ocr_dpi": config.OCR_DPI,
+    }
+
+
+def _manifest_est_compatible(manifest: dict, cache_config: dict) -> bool:
+    """Vérifie que le cache correspond encore aux réglages actuels."""
+    return all(manifest.get(cle) == valeur for cle, valeur in cache_config.items())
 
 
 # ---------------------------------------------------------------------------
@@ -318,27 +328,11 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
             progression(etape, pourcentage, message)
 
     manifest = _charger_manifest(course_id)
-    signature_provider = _cache_signature(provider)
-    cle_cache = {
-        "cache_version": CACHE_VERSION,
-        "provider": signature_provider,
-        "taille_chunk": config.TAILLE_CHUNK,
-        "recouvrement": config.RECOUVREMENT,
-        "ocr_enabled": config.OCR_ENABLED,
-        "ocr_language": config.OCR_LANGUAGE,
-        "ocr_dpi": config.OCR_DPI,
-    }
+    cache_config = _config_cache(provider)
+    signature_provider = cache_config["provider"]
 
-    if (
-        manifest.get("cache_version") != CACHE_VERSION
-        or manifest.get("provider") != signature_provider
-        or manifest.get("taille_chunk") != config.TAILLE_CHUNK
-        or manifest.get("recouvrement") != config.RECOUVREMENT
-        or manifest.get("ocr_enabled") != config.OCR_ENABLED
-        or manifest.get("ocr_language") != config.OCR_LANGUAGE
-        or manifest.get("ocr_dpi") != config.OCR_DPI
-    ):
-        manifest = {**cle_cache, "files": {}}
+    if not _manifest_est_compatible(manifest, cache_config):
+        manifest = {**cache_config, "files": {}}
 
     if not fichiers_pdf:
         raise ValueError("Aucun PDF fourni.")
@@ -444,7 +438,7 @@ def construire_index(course_id: str, fichiers_pdf: list[tuple[str, str]], provid
         os.replace(tmp_index, f_index)
         os.replace(tmp_chunks, f_chunks)
         _sauver_manifest(course_id, {
-            **cle_cache,
+            **cache_config,
             "files": nouveaux_files,
         })
     finally:
@@ -577,21 +571,9 @@ def _chunk_concerne_entite(chunk: dict, entite: str) -> bool:
 
 def _axes_question(question: str) -> list[str]:
     """Repère les axes explicitement demandés dans une comparaison."""
-    variantes = {
-        "localisation": "localisation",
-        "localisations": "localisation",
-        "fonction": "fonction",
-        "fonctions": "fonction",
-        "periode": "période",
-        "periodes": "période",
-        "transformation": "transformation",
-        "transformations": "transformation",
-        "usage": "usage",
-        "usages": "usage",
-    }
     axes = []
     for mot in _normaliser_message(question).split():
-        axe = variantes.get(mot)
+        axe = rules.AXES_COMPARAISON.get(mot)
         if axe and axe not in axes:
             axes.append(axe)
     return axes
@@ -600,7 +582,13 @@ def _axes_question(question: str) -> list[str]:
 def _est_question_preuves(question: str) -> bool:
     """Détecte une demande explicite de preuves ou d'indices."""
     mots = set(_normaliser_message(question).split())
-    return bool(mots.intersection({"preuve", "preuves", "indice", "indices"}))
+    return bool(mots.intersection(rules.MOTS_PREUVES))
+
+
+def _est_question_comparaison(question: str) -> bool:
+    """Détecte une demande de comparaison explicite."""
+    normalisee = _normaliser_message(question)
+    return normalisee.startswith("compare") or " comparaison " in f" {normalisee} "
 
 
 def _diversifier_par_entites(chunks: list[dict], question: str,
@@ -622,34 +610,11 @@ def _diversifier_par_entites(chunks: list[dict], question: str,
     quota = max(2, k // len(entites))
     axes = _axes_question(question)
 
-    termes_axes = {
-        "localisation": [
-            "localisation", "situé", "située", "lieu", "emplacement",
-            "origine", "zone", "région",
-        ],
-        "fonction": [
-            "fonction", "usage", "rôle", "objectif", "utilité",
-            "activité", "application", "service",
-        ],
-        "période": [
-            "période", "chronologie", "phase", "état", "siècle",
-            "date", "époque", "durée", "évolution",
-        ],
-        "transformation": [
-            "transformation", "réaménagement", "reconversion",
-            "modification", "évolution", "changement",
-        ],
-        "usage": [
-            "usage", "fonction", "utilisation", "emploi",
-            "application", "pratique",
-        ],
-    }
-
     selection = []
     for entite in entites:
         termes_requete = [entite]
         for axe in axes:
-            termes_requete.extend(termes_axes[axe])
+            termes_requete.extend(rules.TERMES_PAR_AXE[axe])
         requete = " ".join(termes_requete)
         classement = _classer_par_mots_cles(chunks, requete, len(chunks))
         ajoutes = 0
@@ -668,9 +633,32 @@ def _diversifier_par_entites(chunks: list[dict], question: str,
     return selection[:k]
 
 
+def _diversifier_par_sources(chunks: list[dict], indices_globaux: list[int], k: int) -> list[int]:
+    """Évite qu'une synthèse générale soit dominée par un seul document."""
+    selection = []
+    sources_vues = set()
+    for idx in indices_globaux:
+        source = chunks[idx].get("source")
+        if source in sources_vues:
+            continue
+        selection.append(idx)
+        sources_vues.add(source)
+        if len(selection) >= k:
+            return selection
+
+    for idx in indices_globaux:
+        if idx not in selection:
+            selection.append(idx)
+        if len(selection) >= k:
+            break
+    return selection
+
+
 def rechercher(index, chunks, provider, question: str, k: int) -> list[dict]:
     """Retourne les meilleurs passages après recherche hybride FAISS + BM25."""
     n_candidats = min(k * 5, len(chunks))
+    if _est_question_synthese_generale(question):
+        n_candidats = min(max(k * 10, 80), len(chunks))
     rang_dense = _classer_par_embeddings(index, provider, question, n_candidats)
     rang_bm25 = _classer_par_mots_cles(chunks, question, n_candidats)
     scores_rrf = _fusionner_classements(rang_dense, rang_bm25)
@@ -696,7 +684,10 @@ def rechercher(index, chunks, provider, question: str, k: int) -> list[dict]:
             idx for idx in indices_tries if idx not in indices_lexicaux[:k]
         ]
 
-    top_k = _diversifier_par_entites(chunks, question, indices_tries, k)
+    if _est_question_synthese_generale(question):
+        top_k = _diversifier_par_sources(chunks, indices_tries, k)
+    else:
+        top_k = _diversifier_par_entites(chunks, question, indices_tries, k)
     return [{**chunks[idx], "score": scores_rrf.get(idx, 0.0)} for idx in top_k]
 
 
@@ -722,16 +713,6 @@ def _formater_historique(history: list[dict] | None) -> str:
 
 def _question_pour_recherche(question: str, history: list[dict] | None) -> str:
     """Complète un suivi vague avec la dernière question de l'étudiant."""
-    suivis_vagues = {
-        "peux tu preciser",
-        "peux tu developper",
-        "peux tu expliquer davantage",
-        "tu peux preciser",
-        "tu peux developper",
-        "et pourquoi",
-        "pourquoi",
-        "comment",
-    }
     if not history:
         return question
 
@@ -746,7 +727,7 @@ def _question_pour_recherche(question: str, history: list[dict] | None) -> str:
                 return f"{contenu} {question}"
         return question
 
-    if _normaliser_message(question) not in suivis_vagues:
+    if _normaliser_message(question) not in rules.SUIVIS_VAGUES:
         return question
 
     for message in reversed(history):
@@ -771,37 +752,31 @@ def _est_question_suivi_reponse(question: str, history: list[dict] | None) -> bo
     if len(mots) > 18:
         return False
 
-    marqueurs = (
-        "c est ca",
-        "c est cela",
-        "c est bien ca",
-        "ca veut dire",
-        "cela veut dire",
-        "donc",
-        "du coup",
-        "en gros",
-        "globalement",
-        "tu confirmes",
-        "tu es sur",
-        "est ce que c est",
-        "je vois",
-        "j ai compris",
-        "bizarre",
-        "pas normal",
-        "pas coherent",
-        "pas clair",
-        "corrige",
-        "reformule",
-        "plus simple",
-        "plus clairement",
-        "robotique",
+    return any(marqueur in normalisee for marqueur in rules.MARQUEURS_SUIVI_REPONSE)
+
+
+def _est_question_synthese_generale(question: str) -> bool:
+    """Détecte une demande de vue d'ensemble du cours ou de ses grands axes."""
+    normalisee = _normaliser_message(question)
+    return any(marqueur in normalisee for marqueur in rules.MARQUEURS_SYNTHESE_GENERALE)
+
+
+def _est_question_synthese_detaillee(question: str) -> bool:
+    """Détecte une synthèse demandée avec plan ou développement."""
+    normalisee = _normaliser_message(question)
+    return _est_question_synthese_generale(question) and any(
+        marqueur in normalisee for marqueur in rules.MARQUEURS_SYNTHESE_DETAILLEE
     )
-    return any(marqueur in normalisee for marqueur in marqueurs)
+
+
+def _est_question_sans_details_techniques(question: str) -> bool:
+    """Détecte une demande volontairement vulgarisée."""
+    normalisee = _normaliser_message(question)
+    return any(marqueur in normalisee for marqueur in rules.MARQUEURS_VULGARISATION)
 
 
 def _instructions_question(question: str, history: list[dict] | None = None) -> str:
     """Ajoute des garde-fous adaptés à la forme de la question."""
-    normalisee = _normaliser_message(question)
     instructions = []
 
     if _est_question_suivi_reponse(question, history):
@@ -831,7 +806,7 @@ def _instructions_question(question: str, history: list[dict] | None = None) -> 
             "explicitement relié à l'affirmation dans l'extrait cité."
         )
 
-    if normalisee.startswith("compare") or " comparaison " in f" {normalisee} ":
+    if _est_question_comparaison(question):
         axes = _axes_question(question)
         portee = (
             f"Les seuls axes autorisés sont : {', '.join(axes)}. "
@@ -849,6 +824,43 @@ def _instructions_question(question: str, history: list[dict] | None = None) -> 
             "période du sujet. Réponse attendue : 250 mots maximum, sans tableau."
         )
 
+    if _est_question_synthese_detaillee(question):
+        instructions.append(
+            "MODE SYNTHESE DETAILLEE : réponds avec une synthèse structurée mais "
+            "lisible. Réponse attendue : 250 à 380 mots maximum. Commence par une "
+            "phrase qui présente le thème général, puis donne 3 à 5 parties "
+            "numérotées. Chaque partie doit avoir un titre court et numéroté, seul "
+            "sur sa ligne, puis un paragraphe explicatif. Mets le gras uniquement "
+            "sur les titres de parties, pas sur les mots dans les paragraphes. "
+            "Ajoute les exemples importants quand ils éclairent vraiment l'idée, "
+            "sans transformer la réponse en inventaire technique."
+        )
+    elif _est_question_synthese_generale(question):
+        instructions.append(
+            "MODE SYNTHESE GENERALE : réponds comme une vue d'ensemble courte du cours. "
+            "Réponse attendue : 120 à 180 mots maximum. Commence par une phrase qui "
+            "nomme le thème général, puis présente 2 à 4 axes principaux. Pour chaque "
+            "axe, explique l'idée en une phrase et cite au maximum un exemple nommé si "
+            "cela aide. Regroupe les exemples au lieu de les détailler. N'ouvre pas une "
+            "longue sous-partie sur un cas d'étude. Ne donne pas de numéros d'unités "
+            "stratigraphiques, de couches, d'inventaire de mobilier ou de datations "
+            "fines sauf si la question les demande clairement. "
+            "L'objectif est d'aider un étudiant à comprendre la structure du cours, "
+            "pas de produire un rapport de fouille."
+        )
+
+    if _est_question_sans_details_techniques(question):
+        instructions.append(
+            "MODE VULGARISATION : la question demande une explication simple. "
+            "Évite les termes techniques rares, les codes, les cotes, les sigles, "
+            "les typologies précises, les dates trop fines, les noms de séries "
+            "d'objets et les inventaires. Préfère les mots courants aux termes "
+            "spécialisés ; si un terme technique est indispensable, explique-le en "
+            "quelques mots. Réponse attendue : 2 ou 3 paragraphes fluides, avec "
+            "une comparaison ou une image simple si cela aide. Ne transforme pas "
+            "la réponse en liste de données."
+        )
+
     if not instructions:
         return ""
     return "\nCONSIGNES SPÉCIFIQUES :\n" + "\n".join(instructions) + "\n"
@@ -856,12 +868,7 @@ def _instructions_question(question: str, history: list[dict] | None = None) -> 
 
 def _doit_verifier_reponse(question: str) -> bool:
     """Active une seconde passe pour les questions les plus sujettes aux extrapolations."""
-    normalisee = _normaliser_message(question)
-    return bool(
-        _est_question_preuves(question)
-        or normalisee.startswith("compare")
-        or " comparaison " in f" {normalisee} "
-    )
+    return _est_question_preuves(question) or _est_question_comparaison(question)
 
 
 def _verifier_reponse(provider, contexte: str, question: str,
@@ -917,36 +924,58 @@ def _exporter_passages(passages: list[dict]) -> list[dict]:
     return resultat
 
 
+def _indices_extraits_references(texte: str) -> set[int]:
+    """Retrouve les numéros d'extraits cités, même si le format varie un peu."""
+    indices = set()
+    for bloc in re.findall(rules.MOTIF_MARQUEUR_EXTRAIT, texte or "", flags=re.IGNORECASE):
+        indices.update(int(numero) - 1 for numero in re.findall(r"\d+", bloc))
+    return indices
+
+
 def _passages_cites(reponse: str, passages: list[dict]) -> list[dict]:
     """Garde les extraits explicitement cités par le modèle, avec repli sûr."""
-    indices = {
-        int(numero) - 1
-        for numero in re.findall(r"\[\s*Extrait\s+(\d+)\s*\]", reponse, flags=re.IGNORECASE)
-    }
+    indices = _indices_extraits_references(reponse)
     cites = [passages[idx] for idx in sorted(indices) if 0 <= idx < len(passages)]
     return cites or passages
 
 
+def _retirer_marqueurs_extraits_visibles(reponse: str) -> str:
+    """Retire les marqueurs techniques du texte affiché à l'utilisateur."""
+    texte = re.sub(rules.MOTIF_MARQUEUR_EXTRAIT, "", reponse or "", flags=re.IGNORECASE)
+    texte = re.sub(
+        r"\s*\+?\s*\[\s*Historique(?:\s+de\s+la\s+conversation)?\s*\]",
+        "",
+        texte,
+        flags=re.IGNORECASE,
+    )
+    texte = re.sub(
+        r"(?im)^\s*(?:\+?\s*)?Historique(?:\s+de\s+la\s+conversation)?\s*:?\s*$",
+        "",
+        texte,
+    )
+    texte = re.sub(r"\s+([,.;!?])", r"\1", texte)
+    texte = re.sub(r"\n{3,}", "\n\n", texte)
+    return texte.strip()
+
+
+def _reponse_signale_absence_information(reponse: str) -> bool:
+    """Détecte le refus attendu quand les ressources ne répondent pas."""
+    normalisee = _normaliser_message(reponse)
+    mots = normalisee.split()
+    refus_detecte = any(
+        refus in normalisee
+        for refus in rules.REFUS_INFORMATION_GLOBALE
+    )
+    return bool(refus_detecte and (len(mots) <= 18 or any(
+        normalisee.startswith(refus)
+        for refus in rules.REFUS_INFORMATION_GLOBALE
+    )))
+
+
 def _nettoyer_reponse(reponse: str, question: str) -> str:
-    """Retire le markdown simple et les pseudo-preuves explicitement invalidées."""
-    reponse = reponse.replace("*", "")
+    """Retire les astérisques isolés et les pseudo-preuves invalidées."""
+    reponse = re.sub(r"(?<!\*)\*(?!\*)", "", reponse)
     if _est_question_preuves(question):
-        exclusions = (
-            "n'est pas une preuve",
-            "ne constitue pas une preuve",
-            "pas considéré comme une preuve",
-            "pas considérée comme une preuve",
-            "lien direct",
-            "seulement compatible",
-            "simplement compatible",
-            "aucune autre preuve",
-            "ne constituent pas des preuves",
-            "suggérant",
-            "suggère",
-            "indice contextuel",
-            "compatible avec",
-            "couramment lié",
-        )
         blocs = re.split(r"\n\s*\n", reponse)
         conserves = []
         for bloc in blocs:
@@ -958,20 +987,19 @@ def _nettoyer_reponse(reponse: str, question: str) -> str:
             ) and bool(mots_bloc.intersection({"pas", "aucune", "aucun"}))
             expression_exclue = any(
                 _normaliser_message(expression) in bloc_normalise
-                for expression in exclusions
+                for expression in rules.EXPRESSIONS_PREUVES_A_RETIRER
             )
             if not commentaire_exclusion and not expression_exclue:
                 conserves.append(bloc)
         reponse = "\n\n".join(conserves).strip()
 
-    normalisee = _normaliser_message(question)
-    if normalisee.startswith("compare") or " comparaison " in f" {normalisee} ":
+    if _est_question_comparaison(question):
         lignes = [
             ligne
             for ligne in reponse.splitlines()
             if not (
                 ligne.lstrip().startswith(("-", "•"))
-                and not re.search(r"\[\s*Extrait\s+\d+\s*\]", ligne, re.IGNORECASE)
+                and not _indices_extraits_references(ligne)
             )
         ]
         while lignes and re.fullmatch(
@@ -988,14 +1016,7 @@ def _retirer_nombres_non_sources(reponse: str, passages: list[dict]) -> str:
     """Retire les propositions contenant un nombre absent des extraits cités."""
     lignes = []
     for ligne in reponse.splitlines():
-        references = [
-            int(numero) - 1
-            for numero in re.findall(
-                r"\[\s*Extrait\s+(\d+)\s*\]",
-                ligne,
-                flags=re.IGNORECASE,
-            )
-        ]
+        references = sorted(_indices_extraits_references(ligne))
         references = [idx for idx in references if 0 <= idx < len(passages)]
         if not references:
             lignes.append(ligne)
@@ -1006,7 +1027,7 @@ def _retirer_nombres_non_sources(reponse: str, passages: list[dict]) -> str:
             for idx in references
         )
         sans_references = re.sub(
-            r"\[\s*Extrait\s+\d+\s*\]",
+            rules.MOTIF_MARQUEUR_EXTRAIT,
             "",
             ligne,
             flags=re.IGNORECASE,
@@ -1059,14 +1080,200 @@ def _retirer_nombres_non_sources(reponse: str, passages: list[dict]) -> str:
     return "\n".join(lignes).strip()
 
 
+def _retirer_fragments_orphelins(texte: str) -> str:
+    """Supprime les petits départs de phrase qui ressemblent à une coupure."""
+    paragraphes = re.split(r"\n\s*\n", texte or "")
+    conserves = []
+
+    for paragraphe in paragraphes:
+        bloc = paragraphe.strip()
+        if not bloc:
+            continue
+        normalise = _normaliser_message(bloc)
+        commence_comme_suite = normalise.startswith(rules.CONNECTEURS_FRAGMENT)
+        commence_en_minuscule = bloc[:1].islower()
+        commence_par_ponctuation = bloc.startswith((",", ";"))
+        if conserves and commence_comme_suite and (
+            commence_en_minuscule or commence_par_ponctuation
+        ):
+            continue
+        conserves.append(bloc)
+
+    return "\n\n".join(conserves)
+
+
+def _debut_phrase_texte() -> str:
+    """Débuts de phrase fréquents utilisés pour repérer un titre collé."""
+    mots = "|".join(re.escape(mot) for mot in rules.DEBUTS_PHRASE_TITRE)
+    return rf"(?:{mots})\b"
+
+
+def _titre_rubrique(titre: str) -> str:
+    """Normalise un intertitre court sans changer son sens."""
+    titre = re.sub(r"\s*:\s*", " : ", titre.strip())
+    titre = re.sub(r"\s{2,}", " ", titre)
+    return titre.rstrip(" .")
+
+
+def _majuscule_initiale(texte: str) -> str:
+    """Met une majuscule au premier caractère alphabétique."""
+    if not texte:
+        return texte
+    for index, caractere in enumerate(texte):
+        if caractere.isalpha():
+            return texte[:index] + caractere.upper() + texte[index + 1:]
+    return texte
+
+
+def _aerer_rubriques_numerotees(texte: str) -> str:
+    """Transforme les rubriques numérotées collées en intertitres lisibles."""
+    debut_phrase = _debut_phrase_texte()
+    lignes = []
+    for ligne in texte.splitlines():
+        correspondance = re.match(r"^(\s*)(\d+[.)])\s+(.+)$", ligne)
+        if not correspondance:
+            lignes.append(ligne)
+            continue
+
+        indentation, numero, contenu = correspondance.groups()
+        titre = ""
+        corps = ""
+        avec_deux_points = re.match(
+            rf"^(.+?:\s*[^.!?\n]{{3,90}}?)\s+({debut_phrase}.+)$",
+            contenu,
+        )
+        if avec_deux_points:
+            titre, corps = avec_deux_points.groups()
+        else:
+            suite_en_et = re.match(
+                r"^(.{24,90}?)\s+(et\s+(?:la|le|les|l'|un|une)\b.+)$",
+                contenu,
+                flags=re.IGNORECASE,
+            )
+            if suite_en_et:
+                titre, corps = suite_en_et.groups()
+            else:
+                phrase_collee = re.match(
+                    rf"^(.{{12,90}}?)\s+({debut_phrase}.+)$",
+                    contenu,
+                )
+                if phrase_collee:
+                    titre, corps = phrase_collee.groups()
+
+        if titre and corps:
+            titre = _titre_rubrique(titre)
+            corps = _majuscule_initiale(corps.strip())
+            lignes.append(f"{indentation}**{numero} {titre}**")
+            lignes.append("")
+            lignes.append(f"{indentation}{corps}")
+            continue
+
+        lignes.append(ligne)
+
+    return "\n".join(lignes)
+
+
+def _retirer_gras(texte: str) -> str:
+    """Retire seulement les marqueurs Markdown de gras."""
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", texte)
+
+
+def _ligne_titre_rubrique(ligne: str) -> bool:
+    """Reconnaît un intertitre court, sans viser les phrases ordinaires."""
+    propre = _retirer_gras(ligne).strip()
+    propre = re.sub(r"^\d+[.)]\s+", "", propre)
+    if not propre or len(propre) > 95:
+        return False
+    if propre.startswith(("-", "•")) or propre.endswith((".", "?", "!")):
+        return False
+    if propre.endswith(":") or propre.endswith(" :"):
+        return False
+    if " : " in propre:
+        gauche, droite = propre.split(" : ", 1)
+        if len(droite.split()) > 7:
+            return False
+        return 2 <= len(gauche.split()) <= 8 and bool(droite.strip())
+    mots = propre.split()
+    return 2 <= len(mots) <= 8
+
+
+def _harmoniser_gras_et_titres(texte: str, question: str) -> str:
+    """Garde le gras pour les titres seulement et numérote les plans détaillés."""
+    lignes = texte.splitlines()
+    resultat = []
+    numero_titre = 0
+    numerotation_detaillee = _est_question_synthese_detaillee(question)
+
+    for ligne in lignes:
+        propre = ligne.strip()
+        if not propre:
+            resultat.append(ligne)
+            continue
+
+        titre = _ligne_titre_rubrique(propre)
+        if not titre:
+            resultat.append(_retirer_gras(ligne))
+            continue
+
+        indentation = ligne[:len(ligne) - len(ligne.lstrip())]
+        contenu = _titre_rubrique(_retirer_gras(propre))
+
+        if numerotation_detaillee:
+            if _retirer_gras(propre).strip().endswith((":")):
+                resultat.append(_retirer_gras(ligne))
+                continue
+            correspondance_numero = re.match(r"^(\d+[.)])\s+(.+)$", contenu)
+            if correspondance_numero:
+                numero_existant = int(re.match(r"\d+", correspondance_numero.group(1)).group(0))
+                numero_titre = max(numero_titre, numero_existant)
+                contenu = (
+                    f"{correspondance_numero.group(1)} "
+                    f"{correspondance_numero.group(2)}"
+                )
+            else:
+                numero_titre += 1
+                contenu = f"{numero_titre}. {contenu}"
+
+        resultat.append(f"{indentation}**{contenu}**")
+
+    return "\n".join(resultat)
+
+
+def _corriger_formulations_courantes(texte: str) -> str:
+    """Corrige quelques accrocs de français fréquents dans les sorties LLM."""
+    for motif, remplacement in rules.CORRECTIONS_FRANCAIS:
+        texte = re.sub(motif, remplacement, texte, flags=re.IGNORECASE)
+    return texte
+
+
+def _separer_titre_colle(texte: str) -> str:
+    """Sépare un intertitre si le modèle l'a collé au début du paragraphe."""
+    debuts = "|".join(re.escape(mot) for mot in rules.DEBUTS_PHRASE_AERER)
+    motif = rf"(?m)^([{rules.MAJUSCULES_FR}][^.!?\n:,;()]{{8,70}})\s+((?:{debuts})\b)"
+    return re.sub(motif, r"\1\n\n\2", texte)
+
+
+def _recoller_mot_liaison_coupe(texte: str) -> str:
+    """Répare les coupures créées juste après un petit mot de liaison."""
+    mots = "|".join(rules.MOTS_LIAISON_A_RECOLLER)
+    motif = rf"\b({mots})\n\n(?=[{rules.MAJUSCULES_FR}])"
+    return re.sub(motif, r"\1 ", texte, flags=re.IGNORECASE)
+
+
 def _reformater_reponse_etudiante(reponse: str, question: str) -> str:
-    """Nettoie l?g?rement la r?ponse sans imposer de structure."""
+    """Nettoie légèrement la réponse sans imposer de structure lourde."""
     texte = (reponse or "").replace("\r\n", "\n").strip()
     if not texte:
         return ""
     texte = re.sub(r"[ \t]+\n", "\n", texte)
+    texte = _aerer_rubriques_numerotees(texte)
+    texte = _separer_titre_colle(texte)
+    texte = _recoller_mot_liaison_coupe(texte)
+    texte = _retirer_fragments_orphelins(texte)
     texte = re.sub(r"\n{3,}", "\n\n", texte)
-    texte = re.sub(r"\s+([,.;:!?])", r"\1", texte)
+    texte = re.sub(r"\s+([,.;!?])", r"\1", texte)
+    texte = _corriger_formulations_courantes(texte)
+    texte = _harmoniser_gras_et_titres(texte, question)
     return texte.strip()
 
 def repondre(course_id: str, question: str, k: int, provider,
@@ -1098,14 +1305,23 @@ def repondre(course_id: str, question: str, k: int, provider,
         f"QUESTION : {question}\n\n"
         "Réponds en français uniquement à partir du CONTEXTE ci-dessus. "
         "Ajoute [Extrait N] après chaque affirmation factuelle. "
-        "Réponds directement, sans introduction générique, sans conclusion ajoutée, "
-        "sans tableau et sans section qui n'est pas demandée. "
+        "Réponds directement, avec une première phrase naturelle qui donne l'idée "
+        "principale avant les détails. Évite les introductions génériques, les "
+        "conclusions ajoutées, les tableaux et les sections non demandées. "
+        "Sauf demande explicitement détaillée, vise 2 à 4 paragraphes courts et "
+        "environ 180 à 260 mots maximum. Pour une question simple, préfère des "
+        "paragraphes fluides à des titres. Si tu utilises un titre, mets-le seul "
+        "sur sa ligne puis explique avec des phrases complètes. N'utilise le gras "
+        "qu'avec **...** sur les titres de parties ou de rubriques, jamais sur des "
+        "mots isolés dans les paragraphes. Si tu fais des rubriques, ne colle jamais "
+        "le titre et son explication sur la même ligne. "
         "Si la question demande de citer, lister ou résumer des notions, donne une "
         "synthèse lisible en quelques rubriques, sans sous-listes imbriquées et sans "
         "inventaire technique inutile. Regroupe les détails proches, limite-toi aux "
         "notions centrales et n'ajoute pas d'exemples précis si la question ne les "
-        "demande pas. Pour les rubriques principales, évite les listes numérotées : "
-        "utilise plutôt des titres courts ou des puces simples. "
+        "demande pas. Pour les rubriques principales, évite les listes numérotées, "
+        "sauf si la question demande un résumé détaillé, des grandes parties ou un "
+        "plan : dans ce cas, utilise 3 à 5 titres de parties numérotés. "
         "Vérifie silencieusement chaque affirmation avant de rédiger la réponse finale. "
         "Si aucune réponse fiable ne peut être établie, dis que l'information "
         "n'est pas présente dans les ressources du cours."
@@ -1124,10 +1340,20 @@ def repondre(course_id: str, question: str, k: int, provider,
     reponse = _nettoyer_reponse(reponse, question)
     reponse = _retirer_nombres_non_sources(reponse, passages)
     reponse = _reformater_reponse_etudiante(reponse, question)
+    if not reponse.strip():
+        return {
+            "reponse": rules.REPONSE_ABSENCE_INFORMATION,
+            "sources": [],
+            "passages": [],
+            "tokens": tokens,
+        }
+    if _reponse_signale_absence_information(reponse):
+        return {"reponse": reponse, "sources": [], "passages": [], "tokens": tokens}
+
     passages_utilises = _passages_cites(reponse, passages)
     sources = sorted({
         f"{p['source']} (p.{p['page']})"
         for p in passages_utilises
     })
-    return {"reponse": reponse, "sources": sources,
+    return {"reponse": _retirer_marqueurs_extraits_visibles(reponse), "sources": sources,
             "passages": _exporter_passages(passages_utilises), "tokens": tokens}

@@ -98,12 +98,25 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
                 continue;
             }
 
+            if (/^-{3,}$/.test(brute)) {
+                viderTout();
+                continue;
+            }
+
             var titre = brute.match(/^(#{1,3})\s+(.+)$/);
             if (titre) {
                 viderTout();
                 compteurListeOrdonnee = 0;
                 var niveau = Math.min(3, titre[1].length);
                 blocs.push('<div class="brc_md_title brc_md_h' + niveau + '">' + preparerMarkdownInline(titre[2]) + '</div>');
+                continue;
+            }
+
+            var titreGras = brute.match(/^\*\*(.+?)\*\*$/);
+            if (titreGras) {
+                viderTout();
+                compteurListeOrdonnee = 0;
+                blocs.push('<div class="brc_md_title brc_md_h2">' + preparerMarkdownInline(titreGras[1]) + '</div>');
                 continue;
             }
 
@@ -206,7 +219,7 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
 
         document.getElementById('brc-close').addEventListener('click', closePanel);
         document.getElementById('brc-fullscreen').addEventListener('click', toggleFull);
-        document.getElementById('brc-newchat').addEventListener('click', resetChat);
+        document.getElementById('brc-newchat').addEventListener('click', function() { resetChat(courseid); });
         document.getElementById('brc-send').addEventListener('click', function() { envoyer(courseid); });
         document.getElementById('brc-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); envoyer(courseid); }
@@ -235,11 +248,13 @@ define(['core/ajax', 'core/str'], function(Ajax, Str) {
     }
 
     // ── Nouveau chat — efface historique et messages ──────────────────────
-    function resetChat() {
+    function resetChat(courseid) {
         var zone = document.getElementById('brc-messages');
         zone.innerHTML = welcomeHTML;
+        indexStatusBubble = null;
         document.getElementById('brc-input').value = '';
         autoResize(document.getElementById('brc-input'));
+        suivreIndexation(courseid, false, true);
         historique = [];  // vide la mémoire de conversation
     }
 

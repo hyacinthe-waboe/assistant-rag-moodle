@@ -40,6 +40,11 @@ class PromptGeneralisteTests(unittest.TestCase):
         self.assertIn("rubriques courtes", prompt)
         self.assertIn("sous-listes imbriquées", prompt)
         self.assertIn("synthèse utile à un étudiant", prompt)
+        self.assertIn("voix naturelle", prompt)
+        self.assertIn("phrase normale", prompt)
+        self.assertIn("Évite le style fiche automatique", prompt)
+        self.assertIn("2 à 4 paragraphes", prompt)
+        self.assertIn("préfère des paragraphes à des titres", prompt)
 
 
 class ReponseLocaleTests(unittest.TestCase):
@@ -196,6 +201,66 @@ class UtilitairesRagTests(unittest.TestCase):
 
         self.assertEqual([p["source"] for p in resultat], ["a.pdf", "b.pdf"])
 
+    def test_passages_cites_lit_les_references_groupees(self):
+        passages = [
+            {"source": "a.pdf", "page": 1, "texte": "A"},
+            {"source": "b.pdf", "page": 2, "texte": "B"},
+            {"source": "c.pdf", "page": 3, "texte": "C"},
+        ]
+
+        resultat = rag._passages_cites(
+            "La réponse s'appuie sur plusieurs idées [Extrait 1, Extrait 3].",
+            passages,
+        )
+
+        self.assertEqual([p["source"] for p in resultat], ["a.pdf", "c.pdf"])
+
+    def test_passages_cites_accepte_les_references_sans_crochets(self):
+        passages = [
+            {"source": "a.pdf", "page": 1, "texte": "A"},
+            {"source": "b.pdf", "page": 2, "texte": "B"},
+            {"source": "c.pdf", "page": 3, "texte": "C"},
+        ]
+
+        resultat = rag._passages_cites(
+            "La réponse s'appuie sur Extraits 1 et 3.",
+            passages,
+        )
+
+        self.assertEqual([p["source"] for p in resultat], ["a.pdf", "c.pdf"])
+
+    def test_retrait_des_marqueurs_extraits_visibles(self):
+        resultat = rag._retirer_marqueurs_extraits_visibles(
+            "Idée principale [Extrait 1, Extrait 3]. Autre idée [Extrait 2]. "
+            "+ [Historique de la conversation]"
+        )
+
+        self.assertEqual(resultat, "Idée principale. Autre idée.")
+
+    def test_retrait_des_marqueurs_sans_crochets(self):
+        resultat = rag._retirer_marqueurs_extraits_visibles(
+            "Idée principale (Extrait 1). Autre idée Extraits 2 et 3."
+        )
+
+        self.assertEqual(resultat, "Idée principale. Autre idée.")
+
+    def test_refus_global_varie_ne_renvoie_pas_de_sources(self):
+        self.assertTrue(
+            rag._reponse_signale_absence_information(
+                "Les ressources du cours ne permettent pas de répondre à cette question."
+            )
+        )
+
+    def test_refus_partiel_long_ne_supprime_pas_les_sources(self):
+        reponse = (
+            "Le document permet de répondre à une partie de la question avec un exemple. "
+            "Il précise plusieurs éléments utiles sur le sujet demandé. "
+            "En revanche, les ressources du cours ne permettent pas de répondre "
+            "à l'autre partie avec certitude."
+        )
+
+        self.assertFalse(rag._reponse_signale_absence_information(reponse))
+
     def test_passages_cites_conserve_tout_sans_reference_valide(self):
         passages = [
             {"source": "a.pdf", "page": 1, "texte": "A"},
@@ -203,6 +268,18 @@ class UtilitairesRagTests(unittest.TestCase):
         ]
 
         self.assertEqual(rag._passages_cites("Réponse sans référence.", passages), passages)
+
+    def test_diversification_par_sources_evite_un_seul_document(self):
+        chunks = [
+            {"source": "a.pdf", "texte": "A1"},
+            {"source": "a.pdf", "texte": "A2"},
+            {"source": "b.pdf", "texte": "B"},
+            {"source": "c.pdf", "texte": "C"},
+        ]
+
+        resultat = rag._diversifier_par_sources(chunks, [0, 1, 2, 3], 3)
+
+        self.assertEqual(resultat, [0, 2, 3])
 
     def test_nettoyage_supprime_une_pseudo_preuve_auto_invalidee(self):
         reponse = (
@@ -226,9 +303,17 @@ class UtilitairesRagTests(unittest.TestCase):
         self.assertNotIn("ne sont pas présentés", resultat)
         self.assertNotIn("Aucune autre preuve", resultat)
 
-    def test_nettoyage_retire_le_markdown_simple(self):
+    def test_nettoyage_conserve_le_gras_markdown(self):
         resultat = rag._nettoyer_reponse(
             "**Fonction** : réponse [Extrait 1].",
+            "Quelle est sa fonction ?",
+        )
+
+        self.assertEqual(resultat, "**Fonction** : réponse [Extrait 1].")
+
+    def test_nettoyage_retire_les_asterisques_isoles(self):
+        resultat = rag._nettoyer_reponse(
+            "*Fonction* : réponse [Extrait 1].",
             "Quelle est sa fonction ?",
         )
 
@@ -268,7 +353,126 @@ class UtilitairesRagTests(unittest.TestCase):
         self.assertIn("Notions importantes", resultat)
         self.assertIn("Première idée [Extrait 1]", resultat)
         self.assertIn("Deuxième idée [Extrait 2]", resultat)
-        self.assertIn("\n\n2. Autre axe", resultat)
+        self.assertIn("\n\n**2. Autre axe**", resultat)
+
+    def test_reformatage_aere_une_rubrique_numerotee_collee(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "1. Les villas: des domaines polyvalents Les villas étaient des exploitations agricoles organisées.",
+            "Résume de manière détaillée",
+        )
+
+        self.assertIn("**1. Les villas : des domaines polyvalents**", resultat)
+        self.assertIn("\n\nLes villas étaient", resultat)
+
+    def test_reformatage_limite_le_gras_aux_titres(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "Ce cours explore **l'habitat romain** et ses **fonctions sociales**.\n\n"
+            "**Les villas : des domaines polyvalents**\n"
+            "Les villas combinent **résidence** et **production agricole**.",
+            "Résume tout le cours de manière détaillée",
+        )
+
+        self.assertIn("Ce cours explore l'habitat romain", resultat)
+        self.assertNotIn("**l'habitat romain**", resultat)
+        self.assertIn("**1. Les villas : des domaines polyvalents**", resultat)
+        self.assertIn("résidence et production agricole", resultat)
+        self.assertNotIn("**résidence**", resultat)
+
+    def test_reformatage_numerote_les_titres_detaillees_non_numerotes(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "Introduction rapide du cours.\n\n"
+            "Les villas : des domaines polyvalents\n"
+            "Les villas combinent résidence et production.\n\n"
+            "Les domus : des espaces sociaux flexibles\n"
+            "Les domus organisent la vie familiale.",
+            "Résume tout le cours de manière détaillée",
+        )
+
+        self.assertIn("**1. Les villas : des domaines polyvalents**", resultat)
+        self.assertIn("**2. Les domus : des espaces sociaux flexibles**", resultat)
+
+    def test_reformatage_ne_transforme_pas_une_phrase_liste_en_titre(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "4. Méthodes d’étude et valorisation archéologique\n"
+            "5. L’analyse des villas combine plusieurs approches :\n"
+            "- Fouilles stratigraphiques.\n"
+            "- Analyses matérielles.",
+            "Résume tout le cours de manière détaillée",
+        )
+
+        self.assertIn("**4. Méthodes d’étude et valorisation archéologique**", resultat)
+        self.assertIn("5. L’analyse des villas combine plusieurs approches :", resultat)
+        self.assertNotIn("**5. L’analyse des villas combine plusieurs approches", resultat)
+
+    def test_reformatage_aere_une_rubrique_sans_deux_points(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "3. Méthodes d’étude et limites des sources et la dichotomie production consommation est remise en cause.",
+            "Résume de manière détaillée",
+        )
+
+        self.assertIn("**3. Méthodes d’étude et limites des sources**", resultat)
+        self.assertIn("\n\nEt la dichotomie", resultat)
+
+    def test_reformatage_separe_un_titre_colle_a_sa_phrase(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "Une structure divisée en zones fonctionnelles Le plan général montre une séparation claire.",
+            "Explique simplement",
+        )
+
+        self.assertIn(
+            "**Une structure divisée en zones fonctionnelles**\n\nLe plan général",
+            resultat,
+        )
+
+    def test_reformatage_ne_coupe_pas_apres_une_preposition(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "La villa de Goiffieux, située près de Saint-Laurent-d'Agny, est un domaine romain.",
+            "Explique simplement",
+        )
+
+        self.assertNotIn("près de\n\nSaint", resultat)
+        self.assertIn("près de Saint-Laurent", resultat)
+
+    def test_reformatage_ne_coupe_pas_apres_en(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "Olynthe illustre parfaitement l'urbanisme planifié en Grèce antique.",
+            "Explique simplement",
+        )
+
+        self.assertNotIn("en\n\nGrèce", resultat)
+        self.assertIn("en Grèce antique", resultat)
+
+    def test_reformatage_ne_coupe_pas_un_nom_propre(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "À l'inverse des villas, les domus urbaines comme la Casa Sallustio à Pompéi révèlent une organisation flexible.",
+            "Résume tout le cours",
+        )
+
+        self.assertNotIn("Casa\n\nSallustio", resultat)
+        self.assertIn("Casa Sallustio", resultat)
+
+    def test_reformatage_corrige_un_accord_courant(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "Les occupants commerceient avec les villes voisines et les pièces étaient adaptées aux réception.",
+            "Explique simplement",
+        )
+
+        self.assertEqual(
+            resultat,
+            "Les occupants commerçaient avec les villes voisines et les pièces étaient adaptées aux réceptions.",
+        )
+
+    def test_reformatage_retire_un_fragment_orphelin(self):
+        resultat = rag._reformater_reponse_etudiante(
+            "La villa est un domaine organisé autour de plusieurs espaces.\n\n"
+            "avec des traces d'échanges et d'activités agricoles.\n\n"
+            "Elle sert surtout à comprendre les usages domestiques.",
+            "Explique simplement",
+        )
+
+        self.assertNotIn("avec des traces", resultat)
+        self.assertIn("La villa est un domaine", resultat)
+        self.assertIn("Elle sert surtout", resultat)
 
     def test_nombre_absent_de_la_source_supprime_la_ligne(self):
         passages = [
@@ -303,6 +507,49 @@ class UtilitairesRagTests(unittest.TestCase):
         )
 
         self.assertIn("18,5", resultat)
+
+    def test_nombres_avec_references_groupees_sont_verifies(self):
+        passages = [
+            {
+                "source": "a.pdf",
+                "page": 1,
+                "texte": "La première mesure donne 18 unités.",
+            },
+            {
+                "source": "b.pdf",
+                "page": 2,
+                "texte": "La seconde mesure donne 9 unités.",
+            },
+        ]
+
+        resultat = rag._retirer_nombres_non_sources(
+            "Les mesures sont 18 et 9 [Extraits 1 et 2].",
+            passages,
+        )
+
+        self.assertIn("18", resultat)
+        self.assertIn("9", resultat)
+
+    def test_nombre_absent_est_supprime_meme_avec_reference_groupee(self):
+        passages = [
+            {
+                "source": "a.pdf",
+                "page": 1,
+                "texte": "Le document indique seulement une origine au IIe siècle.",
+            },
+            {
+                "source": "b.pdf",
+                "page": 2,
+                "texte": "Le document évoque une occupation ancienne.",
+            },
+        ]
+
+        resultat = rag._retirer_nombres_non_sources(
+            "La destruction date de 79 [Extraits 1 et 2].",
+            passages,
+        )
+
+        self.assertNotIn("79", resultat)
 
     def test_proposition_valide_reste_si_une_date_voisine_est_inventee(self):
         passages = [
@@ -343,6 +590,35 @@ class UtilitairesRagTests(unittest.TestCase):
         self.assertIn("fonction, période", instruction)
         self.assertIn("250 mots maximum", instruction)
         self.assertIn("sans tableau", instruction)
+
+    def test_instruction_synthese_generale_reste_a_hauteur_de_cours(self):
+        instruction = rag._instructions_question("Cite les grandes lignes du cours")
+
+        self.assertIn("vue d'ensemble courte du cours", instruction)
+        self.assertIn("120 à 180 mots maximum", instruction)
+        self.assertIn("2 à 4 axes principaux", instruction)
+        self.assertIn("N'ouvre pas une longue sous-partie", instruction)
+        self.assertIn("pas de numéros d'unités stratigraphiques", instruction)
+
+    def test_instruction_synthese_detaillee_demande_des_parties_numerotees(self):
+        instruction = rag._instructions_question(
+            "Résume tout le cours de manière détaillée, avec les grandes parties."
+        )
+
+        self.assertIn("MODE SYNTHESE DETAILLEE", instruction)
+        self.assertIn("3 à 5 parties numérotées", instruction)
+        self.assertIn("gras uniquement sur les titres", instruction)
+
+    def test_instruction_vulgarisation_evite_les_details_techniques(self):
+        instruction = rag._instructions_question(
+            "Explique ce sujet sans entrer dans les détails techniques"
+        )
+
+        self.assertIn("MODE VULGARISATION", instruction)
+        self.assertIn("Évite les termes techniques rares", instruction)
+        self.assertIn("2 ou 3 paragraphes fluides", instruction)
+        self.assertIn("mots courants", instruction)
+        self.assertIn("Ne transforme pas la réponse en liste de données", instruction)
 
     def test_axes_question_ne_retient_que_les_axes_demandes(self):
         axes = rag._axes_question(
@@ -606,6 +882,8 @@ class ReponseRagTests(unittest.TestCase):
         )
         self.assertIn("QUESTION : Peux-tu préciser ?", provider.message)
         self.assertIn("[Extrait N]", provider.message)
+        self.assertIn("première phrase naturelle", provider.message)
+        self.assertIn("2 à 4 paragraphes courts", provider.message)
 
     def test_repondre_n_expose_que_les_passages_cites(self):
         class ProviderLocal:
@@ -631,6 +909,34 @@ class ReponseRagTests(unittest.TestCase):
         self.assertEqual(resultat["sources"], ["b.pdf (p.2)"])
         self.assertEqual(len(resultat["passages"]), 1)
         self.assertEqual(resultat["passages"][0]["source"], "b.pdf")
+        self.assertEqual(resultat["reponse"], "Information vérifiée.")
+
+    def test_repondre_hors_sujet_ne_renvoie_pas_d_extraits(self):
+        class ProviderLocal:
+            def chat(self, system, message):
+                return (
+                    "Cette information n'est pas présente dans les ressources du cours.",
+                    5,
+                )
+
+        passages = [
+            {"source": "a.pdf", "page": 1, "texte": "Texte A"},
+            {"source": "b.pdf", "page": 2, "texte": "Texte B"},
+        ]
+
+        with (
+            mock.patch.object(rag, "charger_index", return_value=("index", passages)),
+            mock.patch.object(rag, "rechercher", return_value=passages),
+        ):
+            resultat = rag.repondre(
+                "3",
+                "Quelle est la capitale de la France ?",
+                10,
+                ProviderLocal(),
+            )
+
+        self.assertEqual(resultat["sources"], [])
+        self.assertEqual(resultat["passages"], [])
 
     def test_repondre_fait_verifier_une_question_de_preuves(self):
         class ProviderLocal:
@@ -665,9 +971,40 @@ class ReponseRagTests(unittest.TestCase):
         self.assertIn("à partir de zéro", provider.appels[1])
         self.assertIn("SUPPRIME entièrement", provider.appels[1])
         self.assertIn("tout nombre ou toute date", provider.appels[1])
-        self.assertEqual(resultat["reponse"], "Preuve directe corrigée [Extrait 2].")
+        self.assertEqual(resultat["reponse"], "Preuve directe corrigée.")
         self.assertEqual(resultat["sources"], ["b.pdf (p.2)"])
         self.assertEqual(resultat["tokens"], 12)
+
+    def test_repondre_sans_preuve_valide_revient_a_un_refus_propre(self):
+        class ProviderLocal:
+            def __init__(self):
+                self.appels = 0
+
+            def chat(self, system, message):
+                self.appels += 1
+                return "Élément seulement compatible, mais pas une preuve directe [Extrait 1].", 5
+
+        passages = [
+            {"source": "a.pdf", "page": 1, "texte": "Contexte compatible seulement."},
+        ]
+
+        with (
+            mock.patch.object(rag, "charger_index", return_value=("index", passages)),
+            mock.patch.object(rag, "rechercher", return_value=passages),
+        ):
+            resultat = rag.repondre(
+                "3",
+                "Quelles preuves confirment cette affirmation ?",
+                10,
+                ProviderLocal(),
+            )
+
+        self.assertEqual(
+            resultat["reponse"],
+            "Cette information n'est pas présente dans les ressources du cours.",
+        )
+        self.assertEqual(resultat["sources"], [])
+        self.assertEqual(resultat["passages"], [])
 
 
 if __name__ == "__main__":

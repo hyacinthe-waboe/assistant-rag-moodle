@@ -275,6 +275,12 @@
 .brc_md_title {
     font-weight: 700;
     line-height: 1.25;
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
+.brc_md_title:first-child {
+    margin-top: 0;
 }
 
 .brc_md_h1 { font-size: 16px; }
