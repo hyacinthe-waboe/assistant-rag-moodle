@@ -31,6 +31,8 @@ L'objectif n'est pas seulement de faire fonctionner une IA : le projet cherche a
 - ♻️ cache SHA-256 des PDF inchangés ;
 - ⏳ indexation asynchrone avec suivi de progression ;
 - 👋 traitement direct des salutations sans appel au modèle ;
+- 🧭 absence de sources affichées quand la réponse indique que l'information n'est pas dans le cours ;
+- 🗣️ format de réponse plus lisible : paragraphes courts, titres utiles et gras limité ;
 - 👁️ OCR optionnel avec Tesseract ;
 - 🛡️ contrôle renforcé des preuves, comparaisons et affirmations numériques ;
 - 🧪 50 tests automatisés.
@@ -78,13 +80,15 @@ Découpage en passages
 11. Les meilleurs extraits sont envoyés au modèle avec la question.
 12. Les réponses sensibles peuvent être vérifiées lors d'une seconde passe.
 13. Le backend filtre les affirmations non justifiées.
-14. Moodle affiche la réponse et les sources réellement retenues.
+14. Si l'information est absente du cours, le backend renvoie une réponse sans sources.
+15. Moodle affiche la réponse et les sources réellement retenues.
 
 ## 🧱 Architecture
 
 ```text
 backend/                         # API FastAPI et moteur RAG
 backend/prompt_benchmark.py      # Benchmark du prompt et de la recherche
+backend/rag_rules.py             # Marqueurs de langage et réponses locales
 moodle/block_ragchat/            # Plugin Moodle
 ARCHITECTURE.md                  # Documentation technique détaillée
 ```
@@ -175,6 +179,7 @@ Ce dépôt ne contient **aucune clé API** ni ressource pédagogique utilisée p
 - l'index global du cours est encore reconstruit après la réutilisation des caches ;
 - certains suivis très vagues ou éloignés du sujet restent difficiles à interpréter ;
 - les questions de preuve ou de comparaison peuvent nécessiter deux appels au modèle ;
+- les règles textuelles explicites sont regroupées dans `backend/rag_rules.py` pour garder `rag.py` plus lisible ;
 - le jeton partagé ne remplace pas HTTPS, un pare-feu et une authentification complète en production.
 
 ## 👨‍💻 Auteur

@@ -13,7 +13,8 @@
    - construit un index séparé pour chaque cours ;
    - réutilise un cache par PDF inchangé pour éviter les recalculs inutiles ;
    - cherche les extraits pertinents ;
-   - envoie au modèle uniquement la question et ces extraits.
+   - envoie au modèle uniquement la question, un historique court et les extraits sélectionnés ;
+   - nettoie la réponse avant l'affichage.
 
 3. **Fournisseur IA**
    - ILAAS : embeddings locaux, génération sur l'infrastructure UT2J ;
@@ -52,6 +53,7 @@ rechargement de Moodle ou un redémarrage de FastAPI.
 
 ```text
 Question de l'étudiant
+  -> réponse locale si c'est une salutation ou un remerciement simple
   -> recherche sémantique FAISS
   -> recherche par mots-clés BM25
   -> fusion des deux classements avec RRF
@@ -60,6 +62,7 @@ Question de l'étudiant
   -> génération de la réponse par le modèle
   -> seconde vérification pour les preuves et comparaisons
   -> nettoyage des affirmations non justifiées
+  -> absence de sources affichées si l'information n'est pas documentée
   -> affichage de la réponse et des extraits cités dans Moodle
 ```
 
@@ -73,6 +76,7 @@ supplémentaire au modèle.
 - `config.py` : paramètres et prompt système.
 - `providers.py` : connexion à ILAAS ou Ollama.
 - `rag.py` : extraction, indexation, recherche et génération.
+- `rag_rules.py` : réponses locales et marqueurs de langage utilisés par `rag.py`.
 - `main.py` : endpoints HTTP utilisés par le plugin Moodle.
 - `prompt_benchmark.py` : scénarios réels de non-régression du prompt.
 
@@ -87,3 +91,5 @@ supplémentaire au modèle.
   est configuré.
 - les questions complexes de preuve et de comparaison utilisent une seconde
   génération de contrôle.
+- certains marqueurs de langage restent volontairement listés dans
+  `rag_rules.py` pour traiter les cas simples sans alourdir le prompt.

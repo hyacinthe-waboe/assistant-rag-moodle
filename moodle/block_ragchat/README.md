@@ -34,8 +34,12 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
 ### Étudiant
 - Taper une question dans le bloc et appuyer sur Entrée ou "Envoyer".
 - La réponse s'affiche, ancrée dans le cours, avec les sources citées.
+- Si le backend indique que l'information n'est pas présente dans le cours,
+  le bloc n'affiche pas d'extraits inutiles.
 - Les salutations simples sont traitées localement, sans recherche ni appel au
   modèle de génération.
+- Le bouton "nouvelle conversation" efface l'historique, mais recharge aussi
+  le dernier statut d'indexation du cours.
 
 ## Points clés
 - L'URL du backend reste côté serveur : le navigateur ne l'atteint jamais.
@@ -52,3 +56,5 @@ Le backend FastAPI doit tourner et être accessible depuis le serveur Moodle :
 - Les PDF inchangés réutilisent leur cache, mais l'index global du cours est
   encore reconstruit à chaque réindexation.
 - Réindexation manuelle (pas encore déclenchée automatiquement à l'ajout d'un fichier).
+- L'affichage Markdown reste volontairement simple : titres courts,
+  paragraphes, listes simples et sources consultables.
